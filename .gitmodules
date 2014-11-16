@@ -1,0 +1,6 @@
+[submodule "ba-funlogic-common"]
+	path = ba-funlogic-common
+	url = https://github.com/fatho/ba-funlogic-common.git
+[submodule "dependencies/ba-funlogic-common"]
+	path = dependencies/ba-funlogic-common
+	url = https://github.com/fatho/ba-funlogic-common.git

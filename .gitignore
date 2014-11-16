@@ -1,3 +1,4 @@
+# TeX files
 *.aux
 *.glo
 *.idx
@@ -21,3 +22,21 @@
 *.mtc1
 *.out
 *.synctex.gz
+
+# haskell files
+dist
+cabal-dev
+*.o
+*.hi
+*.chi
+*.chs.h
+.virtualenv
+.hsenv
+.cabal-sandbox/
+cabal.sandbox.config
+cabal.config
+
+# project files
+*.iml
+.idea/
+
