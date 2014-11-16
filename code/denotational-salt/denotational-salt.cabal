@@ -29,6 +29,6 @@ library
                      , data-default-class
                      , funlogic-core
                      , language-salt
-                     , denotational-core
+                     , denotational-funlogic
   hs-source-dirs:      src
   default-language:    Haskell2010
