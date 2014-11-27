@@ -21,7 +21,9 @@
 *.mtc
 *.mtc1
 *.out
+*.bcf
 *.synctex.gz
+*.run.xml
 
 # haskell files
 dist
