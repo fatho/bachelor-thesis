@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  -- exposed-modules:     
+  exposed-modules:    Denotational.CuMin.Interpreter
   -- other-modules:       
   -- other-extensions:
   build-depends:       base                 ==4.7.*
@@ -31,4 +31,25 @@ library
                      , language-cumin
                      , denotational-funlogic
   hs-source-dirs:      src
+  default-language:    Haskell2010
+
+executable cumint
+  main-is:             Main.hs
+  hs-source-dirs:      cumint
+  ghc-options:         -Wall
+  build-depends:       base                 ==4.7.*
+                     , text                 ==1.1.*
+                     , trifecta             ==1.4.*
+                     , parsers              ==0.11.*
+                     , lens                 ==4.4.*
+                     , mtl                  ==2.1.*
+                     , transformers         ==0.3.*
+                     , containers           ==0.5.*
+                     , unordered-containers ==0.2.*
+                     , ansi-wl-pprint       ==0.6.*
+                     , haskeline            ==0.7.*
+                     , data-default-class
+                     , language-cumin
+                     , funlogic-core
+                     , denotational-cumin
   default-language:    Haskell2010
