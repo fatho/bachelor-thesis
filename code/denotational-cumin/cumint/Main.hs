@@ -24,7 +24,7 @@ import qualified System.Console.GetOpt          as GetOpt
 import qualified System.Console.Haskeline       as Haskeline
 import qualified System.Environment             as Env
 import qualified Text.PrettyPrint.ANSI.Leijen   as PP
-import           Text.Printf
+import qualified Text.Printf                    as Text
 import qualified Text.Read                      as Text
 import           Text.Trifecta
 
@@ -44,14 +44,15 @@ data Opt = NoOpt
 -- | Type of interactive commands
 data Command
   = CmdQuit     -- ^ quit the REPL
+  | CmdReload -- ^ reload module files
   | CmdDef String -- ^ get the definition of the given identifier
   | CmdList     -- ^ list all identifiers
   | CmdEval CuMin.Exp -- ^ evaluate expression
   | CmdType CuMin.Exp -- ^ type of expression
-  | CmdGet String
-  | CmdSet String String
-  | CmdHelp
-  | CmdNoOp
+  | CmdGet String     -- ^ display property value
+  | CmdSet String String -- ^ set property value
+  | CmdHelp -- ^ show help
+  | CmdNoOp -- ^ do nothing
 
 -- | Command parser with usage information
 data CommandP = CommandP
@@ -74,11 +75,13 @@ data Status = StatusOK | StatusErr PP.Doc
 data ReplState
   = ReplState
   { _replMod     :: CuMin.Module
+  , _replFiles   :: [FilePath]
   , _replStepMax :: Integer
   }
 
 makeLenses ''ReplState
 
+-- The REPL Monad uses Haskeline input facilities and needs to store some state.
 type ReplM = Haskeline.InputT (StateT ReplState IO)
 
 -- | This instance can only be defined with UndecidableInstances.
@@ -136,23 +139,36 @@ mapMaybeM f (x:xs) = f x >>= (`liftM` mapMaybeM f xs) . maybe id (:)
 
 -- | Handles command line options and loads files.
 loader :: ([Opt], [FilePath]) -> IO ()
-loader (_, files) = do
-    mergedMods <- mergeNext "<Prelude>" CuMin.preludeModule (CuMin.emptyModule "Interactive")
-      >>= flip (F.foldrM loadNext) files
+loader (_, files) =  flip evalStateT (ReplState interactivePrelude files 10)
+  $ Haskeline.runInputT Haskeline.defaultSettings
+  $ reloadModules >> repl
+
+-- | The Prelude module with another name
+interactivePrelude :: CuMin.Module
+interactivePrelude = CuMin.preludeModule & CuMin.modName .~ "Interactive"
+
+-- | (Re)load all module files listed in the state.
+reloadModules :: (MonadIO m, MonadState ReplState m) => m ()
+reloadModules = do
+    files <- use replFiles
+    -- merge prelude and all modules passed via command line into one big module
+    mergedMods <- liftIO $ F.foldrM loadNext interactivePrelude files
+    -- typecheck the module
     case CuMin.evalTC' (CuMin.includeBuiltIns >> CuMin.checkModule mergedMods) of
       Left tcerr -> putDoc $ PP.pretty tcerr
       Right _ -> do
-        putStrLn "Ready!"
-        flip evalStateT (ReplState mergedMods 10)
-          $ Haskeline.runInputT Haskeline.defaultSettings repl
+        replMod .= mergedMods
+        liftIO $ putStrLn "Ready!"
   where
+    -- load a module file and merge it with prevMod
     loadNext modFile prevMod = do
-      printf "Loading %s\n" modFile
+      Text.printf "Loading %s\n" modFile
       CuMin.buildModuleFromFile modFile >>= \case
         Right m -> mergeNext modFile m prevMod
         Left msg -> do
           PP.putDoc $ PP.red (PP.text "Error loading") PP.<+> PP.text modFile PP.</> msg
           return prevMod
+    -- merges nextMod into prevMod. modFile is used for error messages.
     mergeNext modFile nextMod prevMod =
       case prevMod `CuMin.importUnqualified` nextMod of
         Left (ambADTs, ambBinds) -> do
@@ -169,8 +185,8 @@ repl :: ReplM ()
 repl = while $ flip catchUserInterrupt interruptHandler $ do
     minput <- Haskeline.getInputLine (show prompt)
     result <- runMaybeT $ case minput of
-      Nothing -> mzero
-      Just input -> case parseCommand input of
+      Nothing -> mzero -- end of input
+      Just input -> case parseInputLine input of
         Failure msg -> putDoc msg
         Success cmd -> case cmd of
           -- evaluates an expression to a set of possible values
@@ -188,14 +204,16 @@ repl = while $ flip catchUserInterrupt interruptHandler $ do
             checkInteractiveExpr expr >>= \case
               Left tyerr -> putDoc $ PP.pretty tyerr
               Right ty   -> putDoc $ CuMin.prettyType ty
+          -- reload modules
+          CmdReload -> reloadModules
           -- prints the definition of an ADT or top-level definition
           CmdDef name
-            | null name -> putDoc $ PP.red $ PP.text "name required" <> PP.line
+            | null name -> putDoc $ PP.red $ PP.text "name required"
             | Char.isUpper (head name) -> use (replMod . CuMin.modADTs . at name) >>= \case
-                Nothing  -> putDoc $ PP.red $ PP.text $ printf "ADT %s not found" name
+                Nothing  -> putDoc $ PP.red $ PP.text $ Text.printf "ADT %s not found" name
                 Just def -> putDoc $ CuMin.prettyADT def
             | otherwise -> use (replMod . CuMin.modBinds . at name) >>= \case
-                Nothing  -> putDoc $ PP.red $ PP.text $ printf "top-level binding %s not found" name
+                Nothing  -> putDoc $ PP.red $ PP.text $ Text.printf "top-level binding %s not found" name
                 Just bnd -> putDoc $ CuMin.prettyBinding bnd
           -- lists all ADTs and top-level definitions in scope
           CmdList -> do
@@ -219,21 +237,44 @@ repl = while $ flip catchUserInterrupt interruptHandler $ do
             liftIO $ putStrLn "Bye Bye"
             mzero
           CmdNoOp -> return ()
+    -- mzero --> False (exit), otherwise continue
     return $ Maybe.isJust result
   where
-    parseCommand = parseString (CuMin.runCuMinParser "<interactive>" inputParser) mempty
-    inputParser = (cmdP <|> option CmdNoOp (CmdEval <$> CuMin.expression)) <* eof
-    cmdP = char ':' >> CuMin.varIdent >>= \cmd -> case matchingCommands cmd of
-      []  -> fail "Command not found!"
-      [c] -> cmdArgParser c
-      xs  -> fail $ "Ambigous command. Candidates are " ++ List.intercalate ", " (map cmdName xs)
-    matchingCommands cmd = filter (List.isPrefixOf cmd . cmdName) replCommands
-
-    shortADT (CuMin.ADT tycon tyvars _ _) = PP.text tycon PP.<+> PP.sep (map PP.text tyvars)
-    shortBinding (CuMin.Binding f _ _ ty _) = PP.text f PP.<+> PP.text "::" PP.<+> PP.hang 2 (CuMin.prettyTyDecl ty)
-
+    -- Handler for Ctrl-C interruptions.
     interruptHandler = liftIO $ putStrLn "interrupted!" >> return True
 
+-- | Parses a line of input to a 'Command'.
+parseInputLine :: String -> Result Command
+parseInputLine = parseString (CuMin.runCuMinParser "<interactive>" replLineParser) mempty
+
+-- | Parser for a line of REPL input
+replLineParser :: CuMin.CuMinParser Command
+replLineParser = (defCommandParser <|> evalCommandParser <|> pure CmdNoOp) <* eof
+
+-- | Parses an evaluation command (i.e. a CuMin expression)
+evalCommandParser :: CuMin.CuMinParser Command
+evalCommandParser = CmdEval <$> CuMin.expression
+
+-- | Parses a command starting with ":", automatically selecting the right parser for the command arguments.
+defCommandParser :: CuMin.CuMinParser Command
+defCommandParser = char ':' >> CuMin.varIdent >>= \cmd -> case matchingCommands cmd of
+  []  -> fail "Command not found!"
+  [c] -> cmdArgParser c
+  xs  -> fail $ "Ambigous command. Candidates are " ++ List.intercalate ", " (map cmdName xs)
+
+-- | Returns a list of commands having "cmd" as prefix.
+matchingCommands :: String -> [CommandP]
+matchingCommands cmd = filter (List.isPrefixOf cmd . cmdName) replCommands
+
+-- | Displays an ADT and its type arguments.
+shortADT :: CuMin.ADT -> PP.Doc
+shortADT (CuMin.ADT tycon tyvars _ _) = PP.text tycon PP.<+> PP.sep (map PP.text tyvars)
+
+-- | Displays a binding with its type signature
+shortBinding :: CuMin.Binding -> PP.Doc
+shortBinding (CuMin.Binding f _ _ ty _) = PP.text f PP.<+> PP.text "::" PP.<+> PP.hang 2 (CuMin.prettyTyDecl ty)
+
+-- | Runs a monadic action while it returns true
 while :: Monad m => m Bool -> m ()
 while action = action >>= flip when (while action)
 
@@ -270,6 +311,7 @@ helpProperty (ReplProp name _ _ msg) =
 replCommands :: [CommandP]
 replCommands =
   [ CommandP "quit" (pure CmdQuit) [] "Exits the REPL"
+  , CommandP "reload" (pure CmdReload) [] "Reloads all loaded modules"
   , CommandP "def" (CmdDef <$> (CuMin.varIdent <|> CuMin.conIdent)) ["<name>"] "Shows the definition of an ADT or top-level binding"
   , CommandP "list" (pure CmdList) [] "Shows a list of all definitions"
   , CommandP "type" (CmdType <$> CuMin.expression) ["<expression>"] "Prints the type of an expression"
@@ -290,9 +332,11 @@ replProperties =
          Just n | n > 0 -> StatusOK <$ (replStepMax .= n)
          _ -> return $ StatusErr $ PP.red $ PP.text "positive number expected" )
       (PP.text "The initial step index used for evaluating the semantics"
-        PP.<+> PP.text "(mostly the number of function calls allowed in the evaluation).")
+        PP.<+> PP.text "(i.e. the maximum recursion depth, including the depth of values of free variables).")
   ]
 
+-- | Runs the first action. When Ctrl-C is pressed, the action is aborted using an asynchronous exception and the
+-- second action will be run for recovery.
 catchUserInterrupt :: Haskeline.MonadException m => Haskeline.InputT m a -> Haskeline.InputT m a -> Haskeline.InputT m a
 catchUserInterrupt action handler =
   Haskeline.withInterrupt (Haskeline.handleInterrupt handler action)
