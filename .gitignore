@@ -24,6 +24,7 @@
 *.bcf
 *.synctex.gz
 *.run.xml
+*.txss
 
 # haskell files
 dist
