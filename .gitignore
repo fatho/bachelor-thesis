@@ -25,6 +25,7 @@
 *.synctex.gz
 *.run.xml
 *.txss
+/thesis/bachelor-thesis.pdf
 
 # haskell files
 dist
