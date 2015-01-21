@@ -28,10 +28,7 @@ import qualified Debug.Trace                  as Debug
 
 -- | Encapsulates the Alternative and MonadPlus constraints to be prepared
 -- for the upcoming Applicative/Monad hierarchy in GHC 7.10
-type NonDeterministic m = (Alternative m, MonadPlus m, Traversable m)
-
--- | A non-deterministic choice between values in the monad n.
-type ValueSet n = n (Value n)
+type NonDeterministic m = (Alternative m, MonadPlus m)
 
 -- | A CuMin value, parameterized over a non-deterministic Monad n.
 data Value n
@@ -39,7 +36,7 @@ data Value n
   -- ^ ADT constructor
   | VNat Integer
   -- ^ natural number
-  | VFun (Value n -> ValueSet n)
+  | VFun (Value n -> n (Value n))
   -- ^ function
   | VBot String
   -- ^ bottom with an annotation, which is ignored during computation but displayed in the result
@@ -72,7 +69,7 @@ data EvalEnv n
   = EvalEnv
   { _termEnv   :: M.Map CuMin.VarName (Value n)
   -- ^ the mapping from variable names to values \sigma
-  , _typeEnv   :: M.Map CuMin.TVName (ValueSet n)
+  , _typeEnv   :: M.Map CuMin.TVName (n (Value n))
   -- ^ the mapping from type variables to sets of value \theta
   , _moduleEnv :: CuMin.Module
   -- ^ the module providing a context for evaluating the expression
@@ -83,17 +80,17 @@ data EvalEnv n
   }
 
 -- | The evaluation monad is just a reader monad with the above environment.
-type Eval n = Reader (EvalEnv n)
+type Eval n = ReaderT (EvalEnv n) n
 
 makeLenses ''EvalEnv
 
-runEval :: Eval n a -> CuMin.Module -> Integer -> a
-runEval action context stepMax = runReader action env where
+runEval :: Eval n a -> CuMin.Module -> Integer -> n a
+runEval action context stepMax = runReaderT action env where
   env = EvalEnv M.empty M.empty context cns stepMax
   cns = context ^. CuMin.modADTs . traverse . to CuMin.adtConstructorTypes
 
 -- | Decrements the step index by one in the action passed as argument
-decrementStep :: Eval n a -> Eval n a
+decrementStep :: Monad n => Eval n a -> Eval n a
 decrementStep = local (stepIdx -~ 1)
 
 -- | Converts list to an arbitrary non-deterministic monad.
@@ -106,54 +103,54 @@ applySubst f (CuMin.TVar tv) = f tv
 applySubst f (CuMin.TCon n xs) = CuMin.TCon n $ map (applySubst f) xs
 
 -- | Generates all possible inhabitants of the given type up to the step index provided by the environment.
-anything :: NonDeterministic n => CuMin.Type -> Eval n (ValueSet n)
-anything (CuMin.TVar tv) = fromMaybe (error "free type variable") <$> view (typeEnv.at tv)
+anything :: NonDeterministic n => CuMin.Type -> Eval n (Value n)
+anything (CuMin.TVar tv) = view (typeEnv.at tv) >>= lift . fromMaybe (error "free type variable")
 anything (CuMin.TFun _ _) = error "free variables cannot have a function type"
-anything (CuMin.TNat) = fmap VNat . each . enumFromTo 0 <$> view stepIdx
+anything (CuMin.TNat) = view stepIdx >>= each . fmap VNat . enumFromTo 0
 anything (CuMin.TCon tycon args) = view stepIdx >>= \case
-  n | n <= 0 -> return $ return $ VBot "anything: maximum number of steps exceeded"
+  n | n <= 0 -> return $ VBot "anything: maximum number of steps exceeded"
     | otherwise -> do
       adt <- fromMaybe (error "ADT not found") <$> view (moduleEnv . CuMin.modADTs . at tycon)
       let subst = M.fromList $ zip (adt ^. CuMin.adtTyArgs) args
-      join.each <$> T.mapM (anythingCon subst) (adt ^. CuMin.adtConstr)
+      join $ each <$> T.mapM (anythingCon subst) (adt ^. CuMin.adtConstr)
 
 -- | Generates all inhabitants of the given constructor
-anythingCon :: NonDeterministic n => M.Map CuMin.TVName CuMin.Type -> CuMin.ConDecl -> Eval n (ValueSet n)
+anythingCon :: NonDeterministic n => M.Map CuMin.TVName CuMin.Type -> CuMin.ConDecl -> Eval n (Value n)
 anythingCon subst (CuMin.ConDecl name args) = do
   let appF tv = fromMaybe (CuMin.TVar tv) (subst^.at tv)
   anyargs <- mapM (decrementStep . anything . applySubst appF) args
-  return [ VCon name a | a <- sequence anyargs ]
+  return $ VCon name anyargs
 
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
-eval :: NonDeterministic n => CuMin.Exp -> Eval n (ValueSet n)
+eval :: NonDeterministic n => CuMin.Exp -> Eval n (Value n)
 eval (CuMin.EVar var) = view (termEnv.at var) >>= \case
-  Just val -> return $ return val
+  Just val -> return val
   Nothing -> eval (CuMin.EFun var []) -- might actually be a function without type annotations
 eval (CuMin.ELet var bnd body) = eval bnd >>= letVar body var
 eval (CuMin.ELetFree var ty body) = anything ty >>= letVar body var
-eval (CuMin.EFailed _) = return $ return $ VBot "explicit failure"
+eval (CuMin.EFailed _) = return $ VBot "explicit failure"
 eval (CuMin.EFun fun tyargs) = do
   curStepIdx <- view stepIdx
   if curStepIdx <= 0
-    then return $ return $ VBot $ "maximum number of steps exceeded when calling " ++ fun
+    then return $ VBot $ "maximum number of steps exceeded when calling " ++ fun
     else do
       (CuMin.Binding _ args body (CuMin.TyDecl tyvars _ _) _) <- view $ moduleEnv . CuMin.modBinds . at fun . to fromJust
       curEnv <- ask
-      tyEnv <- T.mapM anything $ M.fromList $ zip tyvars tyargs
+      let tyEnv = fmap (flip runReaderT curEnv . anything) $ M.fromList $ zip tyvars tyargs
       let f name rst vars = return $ VFun $ \val -> rst (M.insert name val vars)
-          g vars = runReader (decrementStep $ withVars vars $ withTyVars tyEnv $ eval body) curEnv
-      return $ foldr f g args M.empty
+          g vars = runReaderT (decrementStep $ withVars vars $ withTyVars tyEnv $ eval body) curEnv
+      lift $ foldr f g args M.empty
 eval (CuMin.EApp fun arg) =
-  join <$> (liftM2 . liftM2) primApp (eval fun) (eval arg)
+  join $ liftM2 primApp (eval fun) (eval arg)
 
-eval (CuMin.ELit lit) = return $ return $ toValue lit
+eval (CuMin.ELit lit) = return $ toValue lit
 
 eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) =
-  (liftM2 . liftM2) primEq (eval ex) (eval ey)
+  liftM2 primEq (eval ex) (eval ey)
 eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) =
-  (liftM2 . liftM2) primAdd (eval ex) (eval ey)
+  liftM2 primAdd (eval ex) (eval ey)
 eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
 -- REMARK: Add future prim-ops to evaluator at this point
 
@@ -163,22 +160,22 @@ eval (CuMin.ECon con tyargs) = do
     Left err -> error $ show tyargs ++ "\n" ++ show tydecl ++ "\ntype error when instantiating constructor: "
       ++ show (PP.plain $ PP.pretty err)
     Right inst ->
-      let f _ rst dxs = return $ VFun $ \x -> rst (dxs . (x:))
-          g _     dxs = return $ VCon con (dxs [])
+      let f _ rst dxs = VFun $ \x -> return $ rst (dxs . (x:))
+          g _     dxs = VCon con (dxs [])
       in return $ foldType f g inst id
 eval (CuMin.ECase scrut alts) = do
-  scrutVals <- eval scrut
-  join <$> T.mapM (`patternMatch` alts) scrutVals
+  scrutVal <- eval scrut
+  patternMatch scrutVal alts
 
 -- | Evaluate the body with a new variable in the term environment.
-letVar :: NonDeterministic n => CuMin.Exp -> CuMin.VarName -> ValueSet n -> Eval n (ValueSet n)
-letVar body var vals = liftM join $ T.sequence [ local (termEnv.at var .~ Just x) $ eval body | x <- vals ]
+letVar :: NonDeterministic n => CuMin.Exp -> CuMin.VarName -> Value n -> Eval n (Value n)
+letVar body var val = local (termEnv.at var .~ Just val) $ eval body
 
 -- | Evaluate the body with new variable bindings in the term environment
-withVars :: NonDeterministic n => M.Map CuMin.VarName (Value n) -> Eval n a -> Eval n a
+withVars :: Monad n => M.Map CuMin.VarName (Value n) -> Eval n a -> Eval n a
 withVars vars = local (termEnv %~ M.union vars)
 
-withTyVars :: M.Map CuMin.TVName (ValueSet n) -> Eval n a -> Eval n a
+withTyVars :: Monad n => M.Map CuMin.TVName (n (Value n)) -> Eval n a -> Eval n a
 withTyVars tyvars = local (typeEnv %~ M.union tyvars)
 
 -- | Folds along a function type signature
@@ -187,12 +184,12 @@ foldType ff fe (CuMin.TFun s t) = ff s $ foldType ff fe t
 foldType _ fe ty = fe ty
 
 -- | Matches the given value against the list of case alternatives and evaluates it.
-patternMatch :: NonDeterministic n => Value n -> [CuMin.Alt] -> Eval n (ValueSet n)
-patternMatch (VBot x) _ = return $ return $ VBot x
+patternMatch :: NonDeterministic n => Value n -> [CuMin.Alt] -> Eval n (Value n)
+patternMatch (VBot x) _ = return $ VBot x
 patternMatch (VNat _) _ = error "cannot pattern match on Nat"
 patternMatch (VFun _) _ = error "cannot pattern match on functions"
 patternMatch con@(VCon cname args) alts = case List.find (matches cname) alts of
-  Nothing -> return $ return $ VBot "incomplete pattern match"
+  Nothing -> return $ VBot "incomplete pattern match"
   Just (CuMin.Alt (CuMin.PVar v) body) -> withVars (M.singleton v con) $ eval body
   Just (CuMin.Alt (CuMin.PCon _ vs) body)
     | length vs == length args -> withVars (M.fromList $ zip vs args) $ eval body
@@ -220,7 +217,7 @@ primAdd (VBot n) (VBot _) = VBot n
 primAdd _ _ = error "primAdd: wrong type"
 
 -- | Function application lifted to values.
-primApp :: NonDeterministic n => Value n -> Value n -> ValueSet n
-primApp (VFun f) a = f a
+primApp :: NonDeterministic n => Value n -> Value n -> Eval n (Value n)
+primApp (VFun f) a = lift $ f a
 primApp (VBot n) _ = return $ VBot n
 primApp _ _ = error "application of non-function type"
