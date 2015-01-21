@@ -106,7 +106,7 @@ applySubst f (CuMin.TCon n xs) = CuMin.TCon n $ map (applySubst f) xs
 anything :: NonDeterministic n => CuMin.Type -> Eval n (Value n)
 anything (CuMin.TVar tv) = view (typeEnv.at tv) >>= lift . fromMaybe (error "free type variable")
 anything (CuMin.TFun _ _) = error "free variables cannot have a function type"
-anything (CuMin.TNat) = view stepIdx >>= each . fmap VNat . enumFromTo 0
+anything (CuMin.TNat) = fmap VNat anyNat
 anything (CuMin.TCon tycon args) = view stepIdx >>= \case
   n | n <= 0 -> return $ VBot "anything: maximum number of steps exceeded"
     | otherwise -> do
@@ -120,6 +120,14 @@ anythingCon subst (CuMin.ConDecl name args) = do
   let appF tv = fromMaybe (CuMin.TVar tv) (subst^.at tv)
   anyargs <- mapM (decrementStep . anything . applySubst appF) args
   return $ VCon name anyargs
+
+-- | Generate naturals up to 'stepIdx' bits.
+anyNat :: NonDeterministic n => Eval n Integer
+anyNat = view stepIdx >>= \case
+  n | n <= 0 -> return 0
+    | otherwise -> do
+      rst <- decrementStep anyNat
+      each [2 * rst, 2 * rst + 1]
 
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
