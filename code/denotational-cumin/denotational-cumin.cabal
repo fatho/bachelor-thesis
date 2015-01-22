@@ -48,8 +48,10 @@ executable cumint
                      , unordered-containers ==0.2.*
                      , ansi-wl-pprint       ==0.6.*
                      , haskeline            ==0.7.*
+                     , either               ==4.3.*
                      , data-default-class
                      , language-cumin
                      , funlogic-core
                      , denotational-cumin
+                     , denotational-funlogic
   default-language:    Haskell2010
