@@ -6,7 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE UndecidableInstances      #-}
-module Denotational.FunLogic.Repl
+module FunLogic.Core.Repl
   ( runRepl
   -- * REPL environment
   , Internal.ReplEnv (..)
@@ -48,10 +48,10 @@ import qualified System.Environment           as Env
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import           Text.Trifecta
 
-import           Internal.Repl.Commands       as Internal
-import           Internal.Repl.General        as Internal
-import           Internal.Repl.Help           as Internal
-import           Internal.Repl.Types          as Internal
+import           FunLogic.Internal.Repl.Commands       as Internal
+import           FunLogic.Internal.Repl.General        as Internal
+import           FunLogic.Internal.Repl.Help           as Internal
+import           FunLogic.Internal.Repl.Types          as Internal
 
 -- | Specifies behavior in case of user interruption with Ctrl+C.
 interruptionHandler :: ReplInputM tag LoopAction

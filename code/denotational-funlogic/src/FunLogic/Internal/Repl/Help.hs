@@ -1,4 +1,4 @@
-module Internal.Repl.Help
+module FunLogic.Internal.Repl.Help
   ( buildHelpDoc
   , helpCommand
   , helpProperty
@@ -6,7 +6,7 @@ module Internal.Repl.Help
 
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-import           Internal.Repl.Types
+import           FunLogic.Internal.Repl.Types
 
 -- | The message printed on ":help" command
 buildHelpDoc :: [CommandDesc c] -> [PropDesc m] -> PP.Doc

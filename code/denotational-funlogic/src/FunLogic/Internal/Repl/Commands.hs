@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE MultiWayIf       #-}
-module Internal.Repl.Commands
+module FunLogic.Internal.Repl.Commands
   ( builtinCommands
   , commandsByPrefix
   , doNothing
@@ -22,8 +22,8 @@ import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import qualified Text.Printf                  as Text
 import           Text.Trifecta
 
-import           Internal.Repl.General
-import           Internal.Repl.Types
+import           FunLogic.Internal.Repl.General
+import           FunLogic.Internal.Repl.Types
 
 -- | Creates action that always continues the REPL execution.
 alwaysContinue :: ReplM tag a -> Command tag

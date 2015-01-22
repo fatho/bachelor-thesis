@@ -6,7 +6,7 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
-module Internal.Repl.Types
+module FunLogic.Internal.Repl.Types
   ( Status (..)
   , LoopAction (..)
   -- * Tag related type families and constraints

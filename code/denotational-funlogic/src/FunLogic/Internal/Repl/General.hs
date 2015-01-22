@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Internal.Repl.General
+module FunLogic.Internal.Repl.General
   (
   -- * Module handling
     mergeModule
@@ -30,7 +30,7 @@ import           Text.Trifecta
 import qualified FunLogic.Core.AST            as FL
 import qualified FunLogic.Core.ModBuilder     as FL
 
-import           Internal.Repl.Types
+import           FunLogic.Internal.Repl.Types
 
 -- * Module handling
 
