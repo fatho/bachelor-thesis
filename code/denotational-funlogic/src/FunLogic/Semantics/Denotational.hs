@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds           #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MonadComprehensions       #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
@@ -140,13 +141,13 @@ anyNatural = pure 0 <|> go 1 where
       <|> decrementStep (go $ 2*n + 1)
 
 -- | Evaluate the body with new variable bindings in the term environment
-bindVar :: Monad n => FL.VarName -> val n -> Eval bnd val idx n a -> Eval bnd val idx n a
+bindVar :: (MonadReader (EvalEnv bnd val idx n) m, Monad n) => FL.VarName -> val n -> m a -> m a
 bindVar var val = local (termEnv %~ M.insert var val)
 
 -- | Evaluate the body with new variable bindings in the term environment
-bindVars :: Monad n => M.Map FL.VarName (val n) -> Eval bnd val idx n a -> Eval bnd val idx n a
+bindVars :: (MonadReader (EvalEnv bnd val idx n) m, Monad n) => M.Map FL.VarName (val n) -> m a -> m a
 bindVars vars = local (termEnv %~ M.union vars)
 
 -- | Evaluate the body with new type variable bindings in the type environment
-bindTyVars :: Monad n => M.Map FL.TVName (n (val n)) -> Eval bnd val idx n a -> Eval bnd val idx n a
+bindTyVars :: (MonadReader (EvalEnv bnd val idx n) m, Monad n) => M.Map FL.TVName (n (val n)) -> m a -> m a
 bindTyVars tyvars = local (typeEnv %~ M.union tyvars)

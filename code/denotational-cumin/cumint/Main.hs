@@ -103,8 +103,8 @@ doEvaluate expr = Repl.alwaysContinue $
       interactiveMod <- use Repl.replModule
       --stepIndex      <- use replStepMax
       let stepIndex = Denot.Infinity --5 :: Integer
-      -- let resultSet = take 100 $ Omega.runOmega $ CuMin.runEval (CuMin.eval expr) interactiveMod stepIndex
-      let resultSet = Logic.observeMany 100 $ unLogicInterleaveT $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
+      let resultSet = take 15 $ Omega.runOmega $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
+      --let resultSet = Logic.observeMany 10 $ unLogicInterleaveT $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
       Repl.putDocLn $ PP.encloseSep PP.lbrace PP.rbrace PP.comma
         (resultSet^..traverse.to PP.pretty)
 

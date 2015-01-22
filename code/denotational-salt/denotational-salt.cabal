@@ -16,13 +16,14 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  -- exposed-modules:     
-  -- other-modules:       
-  -- other-extensions:    
+  exposed-modules:    Language.SaLT.Semantics.Denotational
+  -- other-modules:
+  -- other-extensions:
   build-depends:       base                 ==4.7.*
                      , text                 ==1.1.*
                      , lens                 ==4.4.*
                      , mtl                  ==2.1.*
+                     , transformers         ==0.3.*
                      , containers           ==0.5.*
                      , unordered-containers ==0.2.*
                      , ansi-wl-pprint       ==0.6.*
@@ -31,4 +32,30 @@ library
                      , language-salt
                      , denotational-funlogic
   hs-source-dirs:      src
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+
+executable isalt
+  main-is:             Main.hs
+  hs-source-dirs:      isalt
+  ghc-options:         -Wall
+  build-depends:       base                 ==4.7.*
+                     , text                 ==1.1.*
+                     , trifecta             ==1.4.*
+                     , parsers              ==0.11.*
+                     , lens                 ==4.4.*
+                     , mtl                  ==2.1.*
+                     , transformers         ==0.3.*
+                     , containers           ==0.5.*
+                     , unordered-containers ==0.2.*
+                     , ansi-wl-pprint       ==0.6.*
+                     , haskeline            ==0.7.*
+                     , either               ==4.3.*
+                     , logict               ==0.6.*
+                     , control-monad-omega  ==0.3.*
+                     , data-default-class
+                     , language-salt
+                     , funlogic-core
+                     , denotational-salt
+                     , denotational-funlogic
   default-language:    Haskell2010
