@@ -17,6 +17,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     FunLogic.Core.Repl
+                       FunLogic.Semantics.Denotational
   other-modules:       FunLogic.Internal.Repl.Commands
                        FunLogic.Internal.Repl.General
                        FunLogic.Internal.Repl.Help
