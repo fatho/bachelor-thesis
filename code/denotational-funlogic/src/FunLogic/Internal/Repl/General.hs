@@ -22,8 +22,11 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import qualified Data.List                    as List
 import qualified Data.Map                     as M
+import Data.Maybe
 import           Data.Monoid
 import qualified System.Console.Haskeline     as Haskeline
+import qualified System.Console.Terminal.Size as Terminal
+import qualified System.IO                    as IO
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import           Text.Trifecta
 
@@ -88,9 +91,11 @@ runInterruptible action handler = Haskeline.withInterrupt (Haskeline.handleInter
 
 -- * Miscellaneous
 
--- | PP.putDoc lifted to MonadIO. Also appends a linebreak to each printed document.
+-- | Prints a pretty-printer document to stdout with respect to the current terminal size.
 putDocLn :: MonadIO m => PP.Doc -> m ()
-putDocLn = liftIO . PP.putDoc . (<> PP.line)
+putDocLn outDoc = liftIO $ do
+  tsize <- fromMaybe (Terminal.Window 25 80) `liftM` Terminal.size
+  PP.displayIO IO.stdout $ PP.renderPretty 0.8 (Terminal.width tsize) $ outDoc <> PP.line
 
 -- | Converts a trifecta result to Either.
 resultToEither :: Result a -> Either PP.Doc a
