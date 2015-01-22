@@ -127,7 +127,7 @@ anythingCon subst (CuMin.ConDecl name args) = do
 eval :: NonDeterministic n => CuMin.Exp -> Eval n (Value n)
 eval (CuMin.EVar var) = view (termEnv.at var) >>= \case
   Just val -> return val
-  Nothing -> eval (CuMin.EFun var []) -- might actually be a function without type annotations
+  Nothing -> error "local variable not declared"
 eval (CuMin.ELet var bnd body) = eval bnd >>= letVar body var
 eval (CuMin.ELetFree var ty body) = anything ty >>= letVar body var
 eval (CuMin.EFailed _) = return $ VBot "explicit failure"
