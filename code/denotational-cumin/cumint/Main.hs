@@ -70,7 +70,7 @@ environment = Repl.ReplEnv
   , Repl._replLoader  = cuminLoader
   , Repl._replInspectDefinition = CuMin.prettyBinding
   , Repl._replCustomProperties = []
-  , Repl._replCustomCommands = []
+  , Repl._replCustomCommands = cuminReplCommands
   , Repl._replDefaultParse = CuMin.runCuMinParser "<interactive>" (doEvaluate <$> parseExpression)
   }
 
