@@ -21,9 +21,13 @@ import           Control.Monad.Reader
 import qualified Data.List                       as List
 import qualified Data.Map                        as M
 import           Data.Maybe
+import           Data.Monoid
+import           Data.Unique
+import qualified System.IO.Unsafe                as UIO
 import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 
 import qualified FunLogic.Semantics.Denotational as Core
+import qualified FunLogic.Semantics.PartialOrder as PO
 
 import qualified Language.CuMin.AST              as CuMin
 import qualified Language.CuMin.TypeChecker      as CuMin
@@ -36,7 +40,7 @@ data Value n
   -- ^ ADT constructor
   | VNat Integer
   -- ^ natural number
-  | VFun (Value n -> n (Value n))
+  | VFun (Value n -> n (Value n)) !Unique
   -- ^ function
   | VBot String
   -- ^ bottom with an annotation, which is ignored during computation but displayed in the result
@@ -51,13 +55,54 @@ instance Core.Value Value where
   bottomValue = VBot
   dataValue = VCon
 
+-- | Equality w.r.t. to the partial order.
+instance Eq (Value n) where
+  (VNat n)    == (VNat m)    = n == m
+  (VBot _)    == (VBot _)    = True
+  (VFun _ u1) == (VFun _ u2) = u1 == u2
+  (VCon c xs) == (VCon d ys) = c == d && xs == ys
+  _           == _           = False
+
+-- | Partial order of values w.r.t. to definedness.
+instance PO.PartialOrd (Value n) where
+  -- _|_ is the minimal element
+  (VBot _) `leq` _ = True
+  -- two naturals are only compatible if they're equal
+  (VNat n) `leq` (VNat m) = n == m
+  -- same as above
+  (VFun _ u1) `leq` (VFun _ u2) = u1 == u2
+  (VCon c xs) `leq` (VCon d ys) = c == d && and (zipWith PO.leq xs ys)
+  _           `leq`           _ = False
+
+-- | Arbitrary total order for Values to be used more efficiently in sets.
+instance Ord (Value n) where
+  (VNat n)    `compare` (VNat m)    = n `compare` m
+  (VBot _)    `compare` (VBot _)    = EQ
+  (VFun _ u1) `compare` (VFun _ u2) = u1 `compare` u2
+  (VCon c xs) `compare` (VCon d ys) = c `compare` d <> xs `compare`ys
+  x           `compare` y           = compare (rank x) (rank y) where
+    rank :: Value n -> Int
+    rank (VCon _ _) = 0
+    rank (VNat _)   = 1
+    rank (VFun _ _) = 2
+    rank (VBot _)   = 3
+
 instance PP.Pretty (Value n) where
-  pretty (VCon con []) = PP.text con
-  pretty (VCon con args) = PP.text con PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
+  pretty val@(VCon con args) = case valueToList val of
+    Nothing
+      | null args -> PP.text con
+      | otherwise -> PP.text con PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
+    Just list -> PP.prettyList list
   pretty (VNat i)        = PP.integer i
-  pretty (VFun _)        = PP.text "<closure>"
+  pretty (VFun _ uid)    = PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
   pretty (VBot ann)      = PP.text "\x22A5"
     PP.<> if null ann then PP.empty else PP.enclose PP.langle PP.rangle $ PP.text ann -- "_|_"
+
+-- | If the value is acutally a list, return this list
+valueToList :: Value n -> Maybe [Value n]
+valueToList (VCon "Nil" []) = Just []
+valueToList (VCon "Cons" [x,xs]) = (x:) <$> valueToList xs
+valueToList _ = Nothing
 
 type EvalEnv = Core.EvalEnv CuMin.Binding Value
 
@@ -82,7 +127,7 @@ eval (CuMin.EFun fun tyargs) = do
       (CuMin.Binding _ args body (CuMin.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to fromJust
       curEnv <- ask
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
-      let f name rst vars = return $ VFun $ \val -> rst (M.insert name val vars)
+      let f name rst vars = return $ mkFun $ \val -> rst (M.insert name val vars)
           g vars = runReaderT (Core.decrementStep $ Core.bindVars vars $ Core.bindTyVars tyEnv $ eval body) curEnv
       lift $ foldr f g args M.empty
 eval (CuMin.EApp fun arg) =
@@ -103,18 +148,23 @@ eval (CuMin.ECon con tyargs) = do
     Left err -> error $ show tyargs ++ "\n" ++ show tydecl ++ "\ntype error when instantiating constructor: "
       ++ show (PP.plain $ PP.pretty err)
     Right inst ->
-      let f _ rst dxs = VFun $ \x -> return $ rst (dxs . (x:))
+      let f _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
           g _     dxs = VCon con (dxs [])
       in return $ CuMin.foldFunctionType f g inst id
 eval (CuMin.ECase scrut alts) = do
   scrutVal <- eval scrut
   patternMatch scrutVal alts
 
+-- | Creates a new function value with a unique ID.
+-- Uses unsafePerformIO internally.
+mkFun :: (Value n -> n (Value n)) -> Value n
+mkFun f = UIO.unsafePerformIO $ VFun f <$> newUnique
+
 -- | Matches the given value against the list of case alternatives and evaluates it.
 patternMatch :: (Core.StepIndex idx, Core.NonDeterministic n) => Value n -> [CuMin.Alt] -> Eval idx n (Value n)
-patternMatch (VBot x) _ = return $ VBot x
-patternMatch (VNat _) _ = error "cannot pattern match on Nat"
-patternMatch (VFun _) _ = error "cannot pattern match on functions"
+patternMatch (VBot x)   _ = return $ VBot x
+patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
+patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
 patternMatch con@(VCon cname args) alts = case List.find (matches cname) alts of
   Nothing -> return $ VBot "incomplete pattern match"
   -- catch all pattern: bind scrutinee to name
@@ -147,6 +197,6 @@ primAdd _ _ = error "primAdd: wrong type"
 
 -- | Function application lifted to values.
 primApp :: Core.NonDeterministic n => Value n -> Value n -> Eval idx n (Value n)
-primApp (VFun f) a = lift $ f a
+primApp (VFun f _) a = lift $ f a
 primApp (VBot n) _ = return $ VBot n
 primApp _ _ = error "application of non-function type"
