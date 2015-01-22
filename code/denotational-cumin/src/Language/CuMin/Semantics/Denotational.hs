@@ -5,7 +5,7 @@
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE TemplateHaskell           #-}
-module Denotational.CuMin.Interpreter where
+module Language.CuMin.Semantics.Denotational where
 
 import qualified Data.Map                     as M
 import           Data.Maybe

@@ -16,11 +16,11 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Denotational.FunLogic.Repl
-  other-modules:       Internal.Repl.Commands
-                       Internal.Repl.General
-                       Internal.Repl.Help
-                       Internal.Repl.Types
+  exposed-modules:     FunLogic.Core.Repl
+  other-modules:       FunLogic.Internal.Repl.Commands
+                       FunLogic.Internal.Repl.General
+                       FunLogic.Internal.Repl.Help
+                       FunLogic.Internal.Repl.Types
   -- other-extensions:    
   build-depends:       base                 ==4.7.*
                      , text                 ==1.1.*
