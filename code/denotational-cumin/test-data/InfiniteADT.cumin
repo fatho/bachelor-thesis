@@ -1,0 +1,11 @@
+{- this data type has no total value -}
+data Stream a = Stream a (Stream a)
+
+{- suboptimal ordering of constructors -}
+data List2 a = Cons2 (List2 a) a | Nil2
+
+{- Check if this behaves any different from the definition above -}
+data List3 a = Cons3 a (List3 a) | Nil3
+
+{- Same here -}
+data List4 a = Nil4 | Cons4 (List4 a) a
