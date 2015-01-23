@@ -118,17 +118,18 @@ anything (FL.TNat) = fmap naturalValue anyNatural
 anything (FL.TCon tycon args) = view stepIdx >>= \case
   n | isZero n -> return $ bottomValue "anything: maximum number of steps exceeded"
     | otherwise -> do
+      -- read ADT constructors and generate variable substitution
       adt <- fromMaybe (error "ADT not found") <$> view (moduleEnv . FL.modADTs . at tycon)
       let subst = M.fromList $ zip (adt ^. FL.adtTyArgs) args
-      constr <- each $ adt ^. FL.adtConstr
-      anyConstructor subst constr
+      -- { _|_ } `union` 1st constr. `union` 2nd constr. `union` ...
+      return (bottomValue "anything")  `mplus`
+        msum [ anyConstructor subst constr | constr <- adt ^. FL.adtConstr ]
 
 -- | Generates all inhabitants of the given constructor.
--- TODO: Somehow solve that this functions does not terminate with "Infinity" step index.
 anyConstructor :: (EvalContext bnd val idx n) => M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val idx n (val n)
 anyConstructor subst (FL.ConDecl name args) = do
-  let appF tv = fromMaybe (FL.TVar tv) (subst^.at tv)
-  anyargs <- mapM (decrementStep . anything . applyTySubst appF) args
+  let instantiateTyVars = applyTySubst $ \tv -> fromMaybe (FL.TVar tv) (subst^.at tv)
+  anyargs <- mapM (decrementStep . anything . instantiateTyVars) args
   return $ dataValue name anyargs
 
 -- | Generate naturals up to 'stepIdx' bits.
