@@ -137,6 +137,13 @@ runEval action context stepMax = runReader action env where
 unknown :: (Core.StepIndex idx, Core.NonDeterministic n) => SaLT.Type -> EvalExp idx n (Value n)
 unknown = captureNonDet . Core.anything
 
+-- | Returns the least element of a given type.
+-- For a sets, this is the singleton set containing the least element of the element type,
+-- for every other data type, this is the explicit _|_ element.
+bottomOf :: Applicative n => SaLT.Type -> Value n
+bottomOf (SaLT.TCon "Set" [ty]) = mkSetSingleton $ bottomOf ty
+bottomOf _                      = VBot "failed"
+
 -- | Takes a non-deterministic evaluation and transforms it into an evaluation with explicit non-determinism.
 captureNonDet :: Applicative n => ReaderT e n (Value n) -> Reader e (Value n)
 captureNonDet = mapReaderT (Identity . mkSet)
@@ -151,7 +158,7 @@ eval (SaLT.EVar var) = view (Core.termEnv . at var) >>= \case
 eval (SaLT.EPrim prim args) = mapM eval args >>= evalPrim prim
 eval (SaLT.ELit (SaLT.LNat n)) = return $ Core.naturalValue n
 eval (SaLT.ESet valE) = mkSetSingleton <$> eval valE
-eval (SaLT.EFailed _) = return $ VBot "explicit failure"
+eval (SaLT.EFailed ty) = return $ bottomOf ty
 eval (SaLT.EUnknown ty) = unknown ty
 eval (SaLT.EApp funE argE) = primApp <$> eval funE <*> eval argE
 eval (SaLT.EFun fun tyargs) = do
