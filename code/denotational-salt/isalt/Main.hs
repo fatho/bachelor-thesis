@@ -12,7 +12,6 @@ module Main where
 import           Control.Applicative
 import           Control.Lens
 import qualified Control.Monad.Logic                   as Logic
-import qualified Control.Monad.Omega                   as Omega
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
@@ -95,8 +94,8 @@ doEvaluate expr = Repl.alwaysContinue $
       interactiveMod <- use Repl.replModule
       --stepIndex      <- use replStepMax
       let stepIndex = Denot.Infinity --5 :: Integer
-      let resultValue = Denot.mapValueSet Omega.each Omega.runOmega $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
-      --let resultSet = Logic.observeMany 10 $ unLogicInterleaveT $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
+      --let resultValue = Denot.mapValueSet Omega.each Omega.runOmega $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
+      let resultValue = Denot.mapValueSet undefined (Logic.observeMany 10) $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
       Repl.putDocLn $ PP.pretty resultValue
 
 -- | SaLT specific REPL commands.

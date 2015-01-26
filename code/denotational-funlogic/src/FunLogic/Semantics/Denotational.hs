@@ -31,17 +31,19 @@ module FunLogic.Semantics.Denotational
   ) where
 
 import           Control.Applicative
-import           Control.Lens         hiding (each)
+import           Control.Lens                       hiding (each)
 import           Control.Monad
+import qualified Control.Monad.Logic.Class          as Logic
+import qualified Control.Monad.Logic.Class.Extended as LogicExt
 import           Control.Monad.Reader
-import qualified Data.Map             as M
+import qualified Data.Map                           as M
 import           Data.Maybe
 
-import qualified FunLogic.Core.AST    as FL
+import qualified FunLogic.Core.AST                  as FL
 
 -- | Encapsulates the Alternative and MonadPlus constraints to be prepared
 -- for the upcoming Applicative/Monad hierarchy in GHC 7.10
-type NonDeterministic m = (Alternative m, MonadPlus m)
+type NonDeterministic m = (Alternative m, MonadPlus m, Logic.MonadLogic m)
 
 -- | Type class to be implemented by the specific value type.
 class Value (v :: (* -> *) -> *) where
@@ -122,14 +124,16 @@ anything (FL.TCon tycon args) = view stepIdx >>= \case
       adt <- fromMaybe (error "ADT not found") <$> view (moduleEnv . FL.modADTs . at tycon)
       let subst = M.fromList $ zip (adt ^. FL.adtTyArgs) args
       -- { _|_ } `union` 1st constr. `union` 2nd constr. `union` ...
+      -- fair choice out of many constructor alternatives
       return (bottomValue "anything")  `mplus`
-        msum [ anyConstructor subst constr | constr <- adt ^. FL.adtConstr ]
+        LogicExt.interleaveMany [ anyConstructor subst constr | constr <- adt ^. FL.adtConstr ]
 
 -- | Generates all inhabitants of the given constructor.
 anyConstructor :: (EvalContext bnd val idx n) => M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val idx n (val n)
 anyConstructor subst (FL.ConDecl name args) = do
   let instantiateTyVars = applyTySubst $ \tv -> fromMaybe (FL.TVar tv) (subst^.at tv)
-  anyargs <- mapM (decrementStep . anything . instantiateTyVars) args
+  -- evaluates all constructor arguments in an interleaved fashion
+  anyargs <- LogicExt.mapFairM (decrementStep . anything . instantiateTyVars) args
   return $ dataValue name anyargs
 
 -- | Generate naturals up to 'stepIdx' bits.
@@ -137,9 +141,10 @@ anyNatural :: (StepIndex idx, NonDeterministic n) => Eval bnd val idx n Integer
 anyNatural = pure 0 <|> go 1 where
   go n = view stepIdx >>= \idx -> do
     guard (not $ isZero idx)
-    pure n
-      <|> decrementStep (go $ 2*n)
-      <|> decrementStep (go $ 2*n + 1)
+    -- provide a fair disjunction of bitwise-successors
+    pure n <|> Logic.interleave
+      (decrementStep $ go $ 2*n)
+      (decrementStep $ go $ 2*n + 1)
 
 -- | Evaluate the body with new variable bindings in the term environment
 bindVar :: (MonadReader (EvalEnv bnd val idx n) m, Monad n) => FL.VarName -> val n -> m a -> m a

@@ -20,6 +20,7 @@ module Language.SaLT.Semantics.Denotational
 
 import           Control.Applicative
 import           Control.Lens                    hiding (each)
+import qualified Control.Monad.Logic.Class       as Logic
 import           Control.Monad.Reader
 import qualified Data.Foldable                   as F
 import qualified Data.List                       as List
@@ -152,15 +153,18 @@ captureNonDet = mapReaderT (Identity . mkSet)
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
 eval :: (Core.StepIndex idx, Core.NonDeterministic n) => SaLT.Exp -> EvalExp idx n (Value n)
-eval (SaLT.EVar var) = view (Core.termEnv . at var) >>= \case
-  Just val -> return val
-  Nothing  -> error "local variable not declared"
-eval (SaLT.EPrim prim args) = mapM eval args >>= evalPrim prim
+-- there is no non-determinism in the following cases:
+------------------------------------------------------
+eval (SaLT.EVar var) = fromMaybe (error "local variable not declared") <$> view (Core.termEnv . at var)
 eval (SaLT.ELit (SaLT.LNat n)) = return $ Core.naturalValue n
 eval (SaLT.ESet valE) = mkSetSingleton <$> eval valE
 eval (SaLT.EFailed ty) = return $ bottomOf ty
 eval (SaLT.EUnknown ty) = unknown ty
-eval (SaLT.EApp funE argE) = primApp <$> eval funE <*> eval argE
+eval (SaLT.EPrim prim args) = mapM eval args >>= evalPrim prim
+eval (SaLT.EApp funE argE) = liftM2 primApp (eval funE) (eval argE)
+eval (SaLT.ECase scrut alts) = do
+  scrutVal <- eval scrut
+  patternMatch scrutVal alts
 eval (SaLT.EFun fun tyargs) = do
   curStepIdx <- view Core.stepIdx
   if Core.isZero curStepIdx
@@ -172,17 +176,14 @@ eval (SaLT.EFun fun tyargs) = do
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
       -- evaluate body
       Core.bindTyVars tyEnv $ eval body
-eval (SaLT.ELam argName _ body) = do
-  curEnv <- ask
-  return $ mkFun $ \v -> flip runReader curEnv $ Core.bindVar argName v (eval body)
 eval (SaLT.ECon con _) = do
   (SaLT.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   let f _ rst dxs = mkFun $ \x -> rst (dxs . (x:))
       g _     dxs = VCon con (dxs [])
   return $ SaLT.foldFunctionType f g rawType id
-eval (SaLT.ECase scrut alts) = do
-  scrutVal <- eval scrut
-  patternMatch scrutVal alts
+eval (SaLT.ELam argName _ body) = do
+  curEnv <- ask
+  return $ mkFun $ \v -> flip runReader curEnv $ Core.bindVar argName v (eval body)
 
 -- | Creates a new function value with a unique ID.
 -- Uses unsafePerformIO internally.
@@ -204,7 +205,7 @@ patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
 patternMatch (VSet _ _) _ = error "cannot pattern match on sets"
 patternMatch con@(VCon cname args) alts = case List.find (matches cname) alts of
-  Nothing -> return $ VBot "incomplete pattern match"
+  Nothing -> error "incomplete pattern match"
   -- catch all pattern: bind scrutinee to name
   Just (SaLT.Alt (SaLT.PVar v) body) -> Core.bindVar v con $ eval body
   -- constructor pattern: bind arguments to names
@@ -226,11 +227,10 @@ primOp SaLT.PrimAdd  = primAdd
 primOp SaLT.PrimEq   = primEq
 primOp SaLT.PrimBind = primBind
 
--- | Primitve monadic bind on sets.
+-- | Primitve monadic bind on sets. Uses fair conjunction.
 primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
-primBind (VSet vs _) (VFun f _) = mkSet $ vs >>= \val -> case f val of
+primBind (VSet vs _) (VFun f _) = mkSet $ vs Logic.>>- \val -> case f val of
   VSet rs _ -> rs
-  VBot _    -> mzero
   _         -> error ">>= : type error"
 primBind _ _ = error ">>= : wrong arguments"
 

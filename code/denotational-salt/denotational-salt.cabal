@@ -27,6 +27,7 @@ library
                      , containers           ==0.5.*
                      , unordered-containers ==0.2.*
                      , ansi-wl-pprint       ==0.6.*
+                     , logict               ==0.6.*
                      , data-default-class
                      , funlogic-core
                      , language-salt
