@@ -15,24 +15,26 @@ module Language.CuMin.Semantics.Denotational
   ) where
 
 import           Control.Applicative
-import           Control.Lens                    hiding (each)
+import           Control.Lens                       hiding (each)
 import           Control.Monad
+import qualified Control.Monad.Logic.Class          as Logic
+import qualified Control.Monad.Logic.Class.Extended as LogicExt
 import           Control.Monad.Reader
-import qualified Data.List                       as List
-import qualified Data.Map                        as M
+import qualified Data.List                          as List
+import qualified Data.Map                           as M
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Unique
-import qualified System.IO.Unsafe                as UIO
-import qualified Text.PrettyPrint.ANSI.Leijen    as PP
+import qualified System.IO.Unsafe                   as UIO
+import qualified Text.PrettyPrint.ANSI.Leijen       as PP
 
-import qualified FunLogic.Semantics.Denotational as Core
-import qualified FunLogic.Semantics.PartialOrder as PO
+import qualified FunLogic.Semantics.Denotational    as Core
+import qualified FunLogic.Semantics.PartialOrder    as PO
 
-import qualified Language.CuMin.AST              as CuMin
-import qualified Language.CuMin.TypeChecker      as CuMin
+import qualified Language.CuMin.AST                 as CuMin
+import qualified Language.CuMin.TypeChecker         as CuMin
 
-import qualified Debug.Trace                     as Debug
+import qualified Debug.Trace                        as Debug
 
 -- | A CuMin value, parameterized over a non-deterministic Monad n.
 data Value n
@@ -113,47 +115,51 @@ type Eval idx n = ReaderT (EvalEnv idx n) n
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
 eval :: (Core.StepIndex idx, Core.NonDeterministic n) => CuMin.Exp -> Eval idx n (Value n)
-eval (CuMin.EVar var) = view (Core.termEnv . at var) >>= \case
-  Just val -> return val
-  Nothing -> error "local variable not declared"
-eval (CuMin.ELet var bnd body) = eval bnd >>= \val -> Core.bindVar var val (eval body)
-eval (CuMin.ELetFree var ty body) = Core.anything ty >>= \val -> Core.bindVar var val (eval body)
+-- there is no non-determinism in the following cases:
+------------------------------------------------------
+eval (CuMin.EVar var) = fromMaybe (error "local variable not declared") <$> view (Core.termEnv . at var)
 eval (CuMin.EFailed _) = return $ VBot "explicit failure"
+eval (CuMin.ELit (CuMin.LNat nat)) = return $ Core.naturalValue nat
 eval (CuMin.EFun fun tyargs) = do
   curStepIdx <- view Core.stepIdx
   if Core.isZero curStepIdx
     then return $ VBot $ "maximum number of steps exceeded when calling " ++ fun
     else do
-      (CuMin.Binding _ args body (CuMin.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to fromJust
+      -- find function binding
+      (CuMin.Binding _ args body (CuMin.TyDecl tyvars _ _) _)
+        <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to fromJust
+      -- extract environment use inside of the function value
       curEnv <- ask
+      -- construct type environment for function evaluation
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
-      let f name rst vars = return $ mkFun $ \val -> rst (M.insert name val vars)
-          g vars = runReaderT (Core.decrementStep $ Core.bindVars vars $ Core.bindTyVars tyEnv $ eval body) curEnv
-      lift $ foldr f g args M.empty
-eval (CuMin.EApp fun arg) =
-  join $ liftM2 primApp (eval fun) (eval arg)
+      -- build nested lambda expression
+      let mkLam name rst vars = return $ mkFun $ \val -> rst (M.insert name val vars)
+          mkEval vars = runReaderT (Core.decrementStep $ Core.bindVars vars $ Core.bindTyVars tyEnv $ eval body) curEnv
+      lift $ foldr mkLam mkEval args M.empty
+eval (CuMin.ECon con _) = do
+  (CuMin.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
+  let mkLam _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
+      mkCon _     dxs = VCon con (dxs [])
+  return $ CuMin.foldFunctionType mkLam mkCon rawType id
 
-eval (CuMin.ELit (CuMin.LNat nat)) = return $ Core.naturalValue nat
-
+-- the following cases need fair choice:
+------------------------------------------------------
+-- let (free) needs a fair choice of the bound value
+eval (CuMin.ELet var bnd body) = eval bnd Logic.>>- \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELetFree var ty body) = Core.anything ty Logic.>>- \val -> Core.bindVar var val (eval body)
+-- fair choice of caller and argument
+eval (CuMin.EApp funE argE) =
+  LogicExt.fairBind2 primApp (eval funE) (eval argE)
+-- fair choice of prim arguments
 eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) =
-  liftM2 primEq (eval ex) (eval ey)
+  LogicExt.liftFairM2 primEq (eval ex) (eval ey)
 eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) =
-  liftM2 primAdd (eval ex) (eval ey)
-eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
+  LogicExt.liftFairM2 primAdd (eval ex) (eval ey)
 -- REMARK: Add future prim-ops to evaluator at this point
-
-eval (CuMin.ECon con tyargs) = do
-  tydecl <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
-  case CuMin.instantiate' tyargs tydecl :: Either (CuMin.TCErr CuMin.CuMinErrCtx) CuMin.Type of
-    Left err -> error $ show tyargs ++ "\n" ++ show tydecl ++ "\ntype error when instantiating constructor: "
-      ++ show (PP.plain $ PP.pretty err)
-    Right inst ->
-      let f _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
-          g _     dxs = VCon con (dxs [])
-      in return $ CuMin.foldFunctionType f g inst id
-eval (CuMin.ECase scrut alts) = do
-  scrutVal <- eval scrut
-  patternMatch scrutVal alts
+eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
+-- fair choice of scrutinee
+eval (CuMin.ECase scrut alts) = eval scrut
+  Logic.>>- \scrutVal -> patternMatch scrutVal alts
 
 -- | Creates a new function value with a unique ID.
 -- Uses unsafePerformIO internally.
@@ -176,7 +182,7 @@ patternMatch con@(VCon cname args) alts = case List.find (matches cname) alts of
 
 -- | Checks if a pattern matches a constructor
 matches :: CuMin.DataConName -> CuMin.Alt -> Bool
-matches _ (CuMin.Alt (CuMin.PVar _) _) = True
+matches _     (CuMin.Alt (CuMin.PVar _) _) = True
 matches cname (CuMin.Alt (CuMin.PCon pname _) _) = cname == pname
 
 -- | Primitive equality operator which is built-in for naturals.

@@ -25,6 +25,7 @@ library
                      , mtl                  ==2.1.*
                      , containers           ==0.5.*
                      , unordered-containers ==0.2.*
+                     , logict               ==0.6.*
                      , ansi-wl-pprint       ==0.6.*
                      , data-default-class
                      , funlogic-core

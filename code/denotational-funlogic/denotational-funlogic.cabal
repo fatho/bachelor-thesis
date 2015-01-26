@@ -19,6 +19,7 @@ library
   exposed-modules:     FunLogic.Core.Repl
                        FunLogic.Semantics.Denotational
                        FunLogic.Semantics.PartialOrder
+                       Control.Monad.Logic.Class.Extended
   other-modules:       FunLogic.Internal.Repl.Commands
                        FunLogic.Internal.Repl.General
                        FunLogic.Internal.Repl.Help
@@ -36,6 +37,7 @@ library
                      , trifecta             ==1.4.*
                      , either               ==4.3.*
                      , terminal-size        ==0.3.*
+                     , logict               ==0.6.*
                      , data-default-class
                      , funlogic-core
   hs-source-dirs:      src

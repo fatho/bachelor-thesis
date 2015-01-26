@@ -12,7 +12,6 @@ module Main where
 import           Control.Applicative
 import           Control.Lens
 import qualified Control.Monad.Logic                   as Logic
-import qualified Control.Monad.Omega                   as Omega
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
@@ -37,19 +36,6 @@ data CuMinRepl
 
 type instance Repl.TagBinding CuMinRepl = CuMin.Binding
 type instance Repl.TagState CuMinRepl = ()
-
-
-newtype LogicInterleaveT m a = LogicInterleaveT { unLogicInterleaveT :: Logic.LogicT m a }
-  deriving (Functor, Applicative, Monad, Logic.MonadLogic)
-
-instance Monad m => MonadPlus (LogicInterleaveT m) where
-  mzero = LogicInterleaveT $ Logic.LogicT $ \_ fk -> fk
-  mplus = Logic.interleave
-
-instance Monad m => Alternative (LogicInterleaveT m) where
-  empty = mzero
-  (<|>) = mplus
-
 
 -- * CuMin specific REPL definitions
 
@@ -103,8 +89,7 @@ doEvaluate expr = Repl.alwaysContinue $
       interactiveMod <- use Repl.replModule
       --stepIndex      <- use replStepMax
       let stepIndex = Denot.Infinity --5 :: Integer
-      let resultSet = take 15 $ Omega.runOmega $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
-      --let resultSet = Logic.observeMany 10 $ unLogicInterleaveT $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
+      let resultSet = Logic.observeMany 10 $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
       Repl.putDocLn $ PP.encloseSep PP.lbrace PP.rbrace PP.comma
         (resultSet^..traverse.to PP.pretty)
 
