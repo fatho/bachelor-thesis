@@ -1,8 +1,7 @@
-{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE EmptyDataDecls             #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -15,6 +14,7 @@ import qualified Control.Monad.Logic                   as Logic
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
+import qualified Data.Maybe                            as Maybe
 import qualified Data.Set                              as Set
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
 import           Text.Trifecta
@@ -28,6 +28,8 @@ import qualified Language.CuMin.Parser                 as CuMin
 import qualified Language.CuMin.Prelude                as CuMin
 import qualified Language.CuMin.Pretty                 as CuMin
 import qualified Language.CuMin.TypeChecker            as CuMin
+
+import qualified System.Console.Haskeline              as Haskeline
 
 import qualified Debug.Trace                           as Debug
 
@@ -87,11 +89,13 @@ doEvaluate expr = Repl.alwaysContinue $
     Left tyerr -> Repl.putDocLn $ PP.pretty tyerr
     Right _   -> do
       interactiveMod <- use Repl.replModule
-      --stepIndex      <- use replStepMax
-      let stepIndex = Denot.Infinity --5 :: Integer
-      let resultSet = Logic.observeMany 10 $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
-      Repl.putDocLn $ PP.encloseSep PP.lbrace PP.rbrace PP.comma
-        (resultSet^..traverse.to PP.pretty)
+      let eval' :: (Denot.NonDeterministic n, Denot.StepIndex idx) => idx -> n (Denot.Value n)
+          eval' = Denot.runEval (Denot.eval expr) interactiveMod
+      resultSet <- uses Repl.replStepMode $ \case
+        Repl.StepFixed n   -> eval' n
+        Repl.StepUnlimited -> eval' Denot.Infinity
+
+      displayResults 10 $ Logic.observeAll resultSet
 
 -- | CuMin specific REPL commands.
 cuminReplCommands :: [Repl.CommandDesc CuMinRepl]
@@ -122,3 +126,21 @@ main :: IO ()
 main = do
   PP.putDoc header
   Repl.runRepl environment ()
+
+-- | Incremental output of results.
+displayResults :: Int -> [Denot.Value n] -> Repl.ReplInputM CuMinRepl ()
+displayResults _         [] = return ()
+displayResults blockSize results = Haskeline.outputStr "{ " >> go results where
+  go [] = Haskeline.outputStrLn "}"
+  go xs = do
+    let (curBlock, rest) = splitAt blockSize xs
+    Repl.putDocLn $ PP.encloseSep PP.empty PP.empty (PP.text ", ")
+      (curBlock^..traverse.to PP.pretty)
+    if null rest
+      then go []
+      else do
+        mch <- Haskeline.getInputChar "More (y/n)? "
+        Haskeline.outputStr ", "
+        if Maybe.fromMaybe 'n' mch `elem` "yYjJ"
+          then go rest
+          else Haskeline.outputStr "... " >> go []

@@ -90,25 +90,20 @@ type ReplInputM tag = Haskeline.InputT (ReplM tag)
 data CmdLineOpt
 
 -- | A command is a monadic action returning whether the REPL should continue or exit.
-type Command tag = ReplM tag LoopAction
+type Command tag = ReplInputM tag LoopAction
 
 -- | Describes three ways how to set the step index for evaluating computations.
 data StepMode
   = StepFixed Integer
   -- ^ evaluates just with a fixed step index
-  | StepInteractive { stepRangeFrom :: Integer, stepRangeDelta :: Integer }
-  -- ^ starts evaluating at 'stepRangeFrom' and either proceeds evaluation as long as the user whishes,
-  -- increasing depth after each evaluation by 'stepRangeDelta'.
   | StepUnlimited
   -- ^ Does not limit the evaluation depth. In combination with depth first search, this may prevent termination
   -- of the interpreter.
   deriving (Show, Eq)
 
 instance PP.Pretty StepMode where
-  pretty (StepFixed n)     = PP.integer n
-  pretty (StepInteractive start inc) = PP.integer start PP.<+> PP.text ".."
-    PP.<+> PP.text "(+" PP.<+> PP.integer inc PP.<+> PP.rparen
-  pretty (StepUnlimited)   = PP.text "\x221E" -- (infinity)
+  pretty (StepFixed n)   = PP.integer n
+  pretty (StepUnlimited) = PP.text "\x221E" -- (infinity)
 
 -- | Command parser with usage information
 data CommandDesc tag = CommandDesc

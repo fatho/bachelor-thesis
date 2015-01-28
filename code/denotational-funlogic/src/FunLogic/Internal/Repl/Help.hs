@@ -4,6 +4,8 @@ module FunLogic.Internal.Repl.Help
   , helpProperty
   ) where
 
+import Data.List
+import Data.Ord
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
 import           FunLogic.Internal.Repl.Types
@@ -11,12 +13,12 @@ import           FunLogic.Internal.Repl.Types
 -- | The message printed on ":help" command
 buildHelpDoc :: [CommandDesc c] -> [PropDesc m] -> PP.Doc
 buildHelpDoc cmds props = PP.text "The following commands are supported:"
-  PP.<$> PP.indent 2 (PP.vcat $ map helpCommand cmds)
+  PP.<$> PP.indent 2 (PP.vcat $ map helpCommand $ sortBy (comparing cmdName) cmds)
   PP.<$> PP.text "Command names can be abbreviated as long as it is unambigous (for example :t instead of :type)."
   PP.<+> PP.text "To evaluate an expression, simply enter it without any command."
   PP.<$> PP.empty
   PP.<$> PP.text "List of properties"
-  PP.<$> PP.indent 2 (PP.vcat $ map helpProperty props)
+  PP.<$> PP.indent 2 (PP.vcat $ map helpProperty $ sortBy (comparing propName) props)
 
 -- | Generates a help entry for a command
 helpCommand :: CommandDesc c -> PP.Doc
