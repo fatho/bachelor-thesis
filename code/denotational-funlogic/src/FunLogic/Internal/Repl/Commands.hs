@@ -1,8 +1,10 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase       #-}
-{-# LANGUAGE MultiWayIf       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf            #-}
 module FunLogic.Internal.Repl.Commands
   ( builtinCommands
+  , builtinProperties
   , commandsByPrefix
   , doNothing
   , alwaysContinue
@@ -11,15 +13,17 @@ module FunLogic.Internal.Repl.Commands
 import           Control.Applicative
 import           Control.Lens
 import           Control.Monad.IO.Class
-import qualified Data.Char                    as Char
-import qualified Data.List                    as List
-import qualified Data.Map                     as M
-import qualified Data.Text                    as Text
-import qualified FunLogic.Core.AST            as FL
-import qualified FunLogic.Core.Parser         as FL
-import qualified FunLogic.Core.Pretty         as FL
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
-import qualified Text.Printf                  as Text
+import           Control.Monad.State.Class
+import qualified Data.Char                      as Char
+import qualified Data.List                      as List
+import qualified Data.Map                       as M
+import qualified Data.Monoid                    as Monoid
+import qualified Data.Text                      as Text
+import qualified FunLogic.Core.AST              as FL
+import qualified FunLogic.Core.Parser           as FL
+import qualified FunLogic.Core.Pretty           as FL
+import qualified Text.PrettyPrint.ANSI.Leijen   as PP
+import qualified Text.Printf                    as Text
 import           Text.Trifecta
 
 import           FunLogic.Internal.Repl.General
@@ -117,3 +121,32 @@ builtinCommands =
 commandsByPrefix :: String -> [ CommandDesc tag ] -> [ CommandDesc tag ]
 commandsByPrefix cmd = filter (List.isPrefixOf cmd . cmdName)
 
+-- | The list of properties built into the REPL.
+builtinProperties :: (Functor m, MonadState (ReplState tag) m) => [PropDesc m]
+builtinProperties =
+    [ PropDesc "depth" (uses replStepMode PP.pretty) readStepMode
+        (PP.text "The initial step index used for evaluating the semantics"
+         PP.<+> PP.text "(i.e. the maximum recursion depth, including the depth of values of free variables)."
+         PP.<$> PP.text "Possible values are:"
+         PP.<$> PP.indent 2
+            (      PP.text "'n'     for a fixed evaluation depth"
+            PP.<$> PP.text "'n + d' for starting at n, after each evaluation increasing depth by d"
+            PP.<$> PP.text "'inf'   for an unlimited evaluation depth" ) )
+    , PropDesc "strategy" undefined undefined undefined
+    ]
+  where
+    readStepMode str = case parseString stepModeParser Monoid.mempty str of
+      Failure msg -> return $ StatusErr msg
+      Success mode -> StatusOK <$ (replStepMode .= mode)
+
+positiveNatural :: Parser Integer
+positiveNatural = (natural >>= check) <?> "positive natural" where
+  check nat | nat >  0 = return nat
+            | nat <= 0 = fail "natural is not positive"
+
+stepModeParser :: Parser StepMode
+stepModeParser = choice
+    [ try (StepInteractive <$> positiveNatural <* symbol "+" <*> positiveNatural)
+    , StepFixed <$> positiveNatural
+    , StepUnlimited <$ symbol "inf"
+    ]

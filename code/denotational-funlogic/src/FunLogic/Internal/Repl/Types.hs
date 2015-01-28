@@ -22,6 +22,7 @@ module FunLogic.Internal.Repl.Types
   , CmdLineOpt
   , Prompt (..)
   -- * State and Environment
+  , StepMode (..)
   , ReplState (..)
   , ReplEnv (..)
   -- * Lenses for ReplState
@@ -29,6 +30,7 @@ module FunLogic.Internal.Repl.Types
   , replFiles
   , replCustomState
   , replHelpText
+  , replStepMode
   -- * Lenses for ReplEnv
   , replPrelude
   , replLoader
@@ -62,11 +64,14 @@ data Status = StatusOK | StatusErr PP.Doc
 data LoopAction = Break | Continue
   deriving (Eq, Ord, Enum, Bounded, Show, Read)
 
--- | Select language specific types by one tag type
+-- | Select language specific binding type a tag type.
 type family TagBinding tag
+-- | Selects language specific REPL state by a tag type.
 type family TagState   tag
 
+-- | The 'FL.CoreModule' type induced by the binding type associated with the tag by 'TagBinding'.
 type TagModule tag = FL.CoreModule (TagBinding tag)
+-- | Contraints the binding type bound to the tag by 'TagBinding' to 'FL.IsBinding'.
 type TagIsBinding tag = FL.IsBinding (TagBinding tag)
 
 -- | Effects needed for REPL.
@@ -86,6 +91,24 @@ data CmdLineOpt
 
 -- | A command is a monadic action returning whether the REPL should continue or exit.
 type Command tag = ReplM tag LoopAction
+
+-- | Describes three ways how to set the step index for evaluating computations.
+data StepMode
+  = StepFixed Integer
+  -- ^ evaluates just with a fixed step index
+  | StepInteractive { stepRangeFrom :: Integer, stepRangeDelta :: Integer }
+  -- ^ starts evaluating at 'stepRangeFrom' and either proceeds evaluation as long as the user whishes,
+  -- increasing depth after each evaluation by 'stepRangeDelta'.
+  | StepUnlimited
+  -- ^ Does not limit the evaluation depth. In combination with depth first search, this may prevent termination
+  -- of the interpreter.
+  deriving (Show, Eq)
+
+instance PP.Pretty StepMode where
+  pretty (StepFixed n)     = PP.integer n
+  pretty (StepInteractive start inc) = PP.integer start PP.<+> PP.text ".."
+    PP.<+> PP.text "(+" PP.<+> PP.integer inc PP.<+> PP.rparen
+  pretty (StepUnlimited)   = PP.text "\x221E" -- (infinity)
 
 -- | Command parser with usage information
 data CommandDesc tag = CommandDesc
@@ -123,7 +146,7 @@ data Prompt m a
 -- | Internal state of the REPL.
 data ReplState tag
   = ReplState
-  { _replModule      :: FL.CoreModule (TagBinding tag)
+  { _replModule      :: TagModule tag
   -- ^ module merged from all loaded modules
   , _replFiles       :: [FilePath]
   -- ^ loaded files
@@ -131,6 +154,8 @@ data ReplState tag
   -- ^ user defined state
   , _replHelpText    :: PP.Doc
   -- ^ repl help document
+  , _replStepMode    :: StepMode
+  -- ^ the way how to initialize the step indices for evaluating a computation
   }
 
 -- | Environment of the REPL, passed from outside.
