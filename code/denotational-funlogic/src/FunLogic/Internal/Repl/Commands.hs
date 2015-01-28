@@ -2,18 +2,21 @@
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
+{-# LANGUAGE RankNTypes            #-}
 module FunLogic.Internal.Repl.Commands
   ( builtinCommands
   , builtinProperties
   , commandsByPrefix
   , doNothing
   , alwaysContinue
+  , mkProperty
   ) where
 
 import           Control.Applicative
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Control.Monad.State.Class
+import           Control.Monad.Trans
 import qualified Data.Char                      as Char
 import qualified Data.List                      as List
 import qualified Data.Map                       as M
@@ -30,7 +33,7 @@ import           FunLogic.Internal.Repl.General
 import           FunLogic.Internal.Repl.Types
 
 -- | Creates action that always continues the REPL execution.
-alwaysContinue :: ReplM tag a -> Command tag
+alwaysContinue :: ReplInputM tag a -> Command tag
 alwaysContinue = (Continue <$)
 
 -- | Quits the REPL.
@@ -76,7 +79,7 @@ shortBinding bnd = PP.text (bnd ^. FL.bindingName) PP.<+> PP.text "::"
 doSetProp :: String -> String -> Command tag
 doSetProp prop val = alwaysContinue $
   views replCustomProperties (List.find ((== prop) . propName)) >>= \case
-    Just (PropDesc _ _ pset _) -> pset val >>= \case
+    Just (PropDesc _ _ pset _) -> lift (pset val) >>= \case
       StatusOK -> putDocLn $ PP.text "OK"
       StatusErr msg -> putDocLn msg
     Nothing -> putDocLn $ PP.red $ PP.text "unknown property"
@@ -85,7 +88,7 @@ doSetProp prop val = alwaysContinue $
 doGetProp :: String -> Command tag
 doGetProp prop = alwaysContinue $
   views replCustomProperties (List.find ((== prop) . propName)) >>= \case
-    Just (PropDesc _ pget _ _) -> pget >>= liftIO . putDocLn
+    Just (PropDesc _ pget _ _) -> lift pget >>= liftIO . putDocLn
     Nothing -> putDocLn $ PP.red $ PP.text "unknown property"
 
 -- | Shows the help document
@@ -107,7 +110,7 @@ builtinCommands =
     , CommandDesc "reload" (pure doReload) [] "Reloads all loaded modules"
     , CommandDesc "def" (doShowDefinition <$> (FL.varIdent <|> FL.conIdent)) ["<name>"] "Shows the definition of an ADT or top-level binding"
     , CommandDesc "list" (pure doListDefinitions) [] "Shows a list of all definitions"
-    , CommandDesc "set" (doSetProp <$> propNameP <*> many anyChar) ["<property>", "<value>"] "Sets the value of a property"
+    , CommandDesc "set" (doSetProp <$> propNameP <* skipOptional (symbolic '=') <*> many anyChar) ["<property>", "<value>"] "Sets the value of a property"
     , CommandDesc "get" (doGetProp <$> propNameP) ["<property>"] "Reads the value of a property"
     , CommandDesc "help" (pure doShowHelp) [] "Prints this help message"
     , CommandDesc "load" (doLoadFile <$> pathParser) ["<filename>"] "Loads a module from a file."
@@ -124,7 +127,7 @@ commandsByPrefix cmd = filter (List.isPrefixOf cmd . cmdName)
 -- | The list of properties built into the REPL.
 builtinProperties :: (Functor m, MonadState (ReplState tag) m) => [PropDesc m]
 builtinProperties =
-    [ PropDesc "depth" (uses replStepMode PP.pretty) readStepMode
+    [ mkProperty "depth" replStepMode stepModeParser
         (PP.text "The initial step index used for evaluating the semantics"
          PP.<+> PP.text "(i.e. the maximum recursion depth, including the depth of values of free variables)."
          PP.<$> PP.text "Possible values are:"
@@ -132,21 +135,19 @@ builtinProperties =
             (      PP.text "'n'     for a fixed evaluation depth"
             PP.<$> PP.text "'n + d' for starting at n, after each evaluation increasing depth by d"
             PP.<$> PP.text "'inf'   for an unlimited evaluation depth" ) )
-    , PropDesc "strategy" undefined undefined undefined
     ]
-  where
-    readStepMode str = case parseString stepModeParser Monoid.mempty str of
-      Failure msg -> return $ StatusErr msg
-      Success mode -> StatusOK <$ (replStepMode .= mode)
 
-positiveNatural :: Parser Integer
-positiveNatural = (natural >>= check) <?> "positive natural" where
-  check nat | nat >  0 = return nat
-            | nat <= 0 = fail "natural is not positive"
+-- | Creates a property description from a lens into the 'ReplState' and a parser.
+mkProperty :: (MonadState (ReplState tag) m, Functor m, PP.Pretty a)
+    => String -> Lens' (ReplState tag) a -> Parser a -> PP.Doc -> PropDesc m
+mkProperty name access parser = PropDesc name (uses access PP.pretty) readAndSet
+  where
+    readAndSet str = case parseString parser Monoid.mempty str of
+      Failure msg -> return $ StatusErr msg
+      Success mode -> StatusOK <$ (access .= mode)
 
 stepModeParser :: Parser StepMode
 stepModeParser = choice
-    [ try (StepInteractive <$> positiveNatural <* symbol "+" <*> positiveNatural)
-    , StepFixed <$> positiveNatural
+    [ StepFixed <$> natural
     , StepUnlimited <$ symbol "inf"
     ]

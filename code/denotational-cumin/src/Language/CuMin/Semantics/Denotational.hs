@@ -12,6 +12,8 @@ module Language.CuMin.Semantics.Denotational
   -- * step indices
   , Core.Infinity (..)
   , Core.StepIndex (..)
+  -- * further core types
+  , Core.NonDeterministic
   ) where
 
 import           Control.Applicative
@@ -100,7 +102,7 @@ instance PP.Pretty (Value n) where
   pretty (VBot ann)      = PP.text "\x22A5"
     PP.<> if null ann then PP.empty else PP.enclose PP.langle PP.rangle $ PP.text ann -- "_|_"
 
--- | If the value is acutally a list, return this list
+-- | If the value is actually a list, return this list
 valueToList :: Value n -> Maybe [Value n]
 valueToList (VCon "Nil" []) = Just []
 valueToList (VCon "Cons" [x,xs]) = (x:) <$> valueToList xs

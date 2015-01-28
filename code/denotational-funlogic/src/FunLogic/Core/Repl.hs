@@ -18,19 +18,23 @@ module FunLogic.Core.Repl
   , Internal.replInspectDefinition
   , Internal.replDefaultParse
   -- * REPL state
-  , ReplState (..)
-  , replModule
-  , replFiles
-  , replCustomState
-  , replHelpText
+  , Internal.ReplState (..)
+  , Internal.StepMode (..)
+  , Internal.replModule
+  , Internal.replFiles
+  , Internal.replCustomState
+  , Internal.replHelpText
+  , Internal.replStepMode
   -- * Type families
   , Internal.TagBinding
   , Internal.TagState
   -- * Commands and properties
   , Internal.Command
+  , Internal.ReplInputM
   , Internal.CommandDesc (..)
   , Internal.alwaysContinue
   , Internal.PropDesc (..)
+  , Internal.mkProperty
   -- * Utility
   , Internal.putDocLn
   ) where
@@ -40,18 +44,19 @@ import           Control.Lens
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict
-import qualified Data.List                    as List
+import qualified Data.List                       as List
+import qualified Data.Maybe                      as Maybe
 import           Data.Monoid
-import qualified System.Console.GetOpt        as GetOpt
-import qualified System.Console.Haskeline     as Haskeline
-import qualified System.Environment           as Env
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified System.Console.GetOpt           as GetOpt
+import qualified System.Console.Haskeline        as Haskeline
+import qualified System.Environment              as Env
+import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 import           Text.Trifecta
 
-import           FunLogic.Internal.Repl.Commands       as Internal
-import           FunLogic.Internal.Repl.General        as Internal
-import           FunLogic.Internal.Repl.Help           as Internal
-import           FunLogic.Internal.Repl.Types          as Internal
+import           FunLogic.Internal.Repl.Commands as Internal
+import           FunLogic.Internal.Repl.General  as Internal
+import           FunLogic.Internal.Repl.Help     as Internal
+import           FunLogic.Internal.Repl.Types    as Internal
 
 -- | Specifies behavior in case of user interruption with Ctrl+C.
 interruptionHandler :: ReplInputM tag LoopAction
@@ -80,14 +85,19 @@ buildInitialState env cs = ReplState
   { _replModule       = env ^. replPrelude
   , _replFiles        = []
   , _replCustomState  = cs
-  , _replHelpText     = buildHelpDoc (builtinCommands ++ env ^. replCustomCommands) (env ^. replCustomProperties)
+  , _replHelpText     = buildHelpDoc (env ^. replCustomCommands) (env ^. replCustomProperties)
+  , _replStepMode     = StepFixed 10
   }
 
 -- | Start the REPL.
 runRepl :: TagIsBinding tag => ReplEnv tag -> TagState tag -> IO ()
-runRepl env cs = flip runReaderT env
-  $ flip evalStateT (buildInitialState env cs)
-  $ Haskeline.runInputT Haskeline.defaultSettings repl
+runRepl env cs = flip runReaderT envWithBuiltins
+    $ flip evalStateT (buildInitialState envWithBuiltins cs)
+    $ Haskeline.runInputT Haskeline.defaultSettings repl
+  where
+    envWithBuiltins = env
+      & replCustomCommands   %~ (++ builtinCommands)
+      & replCustomProperties %~ (++ builtinProperties)
 
 -- | Run the loop.
 repl :: TagIsBinding tag => ReplInputM tag ()
@@ -97,7 +107,7 @@ repl = parseOptions >>= \case
     mapM_ loadModule files
     -- build prompt and run loop
     prompt <- Prompt <$> view replPrompt <*> pure parseInput
-    let doIt = askInput prompt >>= maybe (return Break) lift
+    let doIt = askInput prompt >>= Maybe.fromMaybe (return Break)
     while $ runInterruptible doIt interruptionHandler
 
 -- | Parser for a line of REPL input
@@ -118,6 +128,6 @@ commandName = token $ many letter
 -- | Parses one line of input.
 parseInput :: TagIsBinding tag => String -> ReplM tag (Either PP.Doc (Command tag))
 parseInput input = do
-  allCommands <- views replCustomCommands (++ builtinCommands)
+  allCommands <- view replCustomCommands
   defaultParse <- view replDefaultParse
   return $ resultToEither $ parseString (replLineParser allCommands defaultParse) mempty input
