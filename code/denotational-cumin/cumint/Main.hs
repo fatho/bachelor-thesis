@@ -1,11 +1,11 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE EmptyDataDecls             #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE EmptyDataDecls        #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 module Main where
 
 import           Control.Applicative
@@ -14,6 +14,7 @@ import qualified Control.Monad.Logic                   as Logic
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
+import qualified Data.List                             as List
 import qualified Data.Maybe                            as Maybe
 import qualified Data.Set                              as Set
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
@@ -95,7 +96,7 @@ doEvaluate expr = Repl.alwaysContinue $
         Repl.StepFixed n   -> eval' n
         Repl.StepUnlimited -> eval' Denot.Infinity
 
-      displayResults 10 $ Logic.observeAll resultSet
+      displayResults $ Logic.observeAll resultSet
 
 -- | CuMin specific REPL commands.
 cuminReplCommands :: [Repl.CommandDesc CuMinRepl]
@@ -128,19 +129,5 @@ main = do
   Repl.runRepl environment ()
 
 -- | Incremental output of results.
-displayResults :: Int -> [Denot.Value n] -> Repl.ReplInputM CuMinRepl ()
-displayResults _         [] = return ()
-displayResults blockSize results = Haskeline.outputStr "{ " >> go results where
-  go [] = Haskeline.outputStrLn "}"
-  go xs = do
-    let (curBlock, rest) = splitAt blockSize xs
-    Repl.putDocLn $ PP.encloseSep PP.empty PP.empty (PP.text ", ")
-      (curBlock^..traverse.to PP.pretty)
-    if null rest
-      then go []
-      else do
-        mch <- Haskeline.getInputChar "More (y/n)? "
-        Haskeline.outputStr ", "
-        if Maybe.fromMaybe 'n' mch `elem` "yYjJ"
-          then go rest
-          else Haskeline.outputStr "... " >> go []
+displayResults :: [Denot.Value n] -> Repl.ReplInputM CuMinRepl ()
+displayResults = Repl.displaySet (const $ Repl.putDocLn . PP.pretty) 0
