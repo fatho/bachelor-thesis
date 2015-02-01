@@ -11,6 +11,8 @@ module FunLogic.Internal.Repl.General
   -- * Input handling
   , askInput
   , runInterruptible
+  -- * Output functions
+  , displaySet
   -- * Miscellaneous
   , putDocLn
   , resultToEither
@@ -22,7 +24,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Reader
 import qualified Data.List                    as List
 import qualified Data.Map                     as M
-import Data.Maybe
+import           Data.Maybe
 import           Data.Monoid
 import qualified System.Console.Haskeline     as Haskeline
 import qualified System.Console.Terminal.Size as Terminal
@@ -108,3 +110,30 @@ while :: Monad m => m LoopAction -> m ()
 while action = action >>= \case
   Continue -> while action
   Break -> return ()
+
+-- | Generic function to display sets in an incremental way.
+displaySet
+  :: (Int -> v -> ReplInputM tag ())
+  -- ^ Function to display an individual element. The first argument is the current indentation level.
+  -- The current line is already indented, but each following line should be indented by that amount.
+  -> Int
+  -- ^ Initial indentation level.
+  -> [v] -> ReplInputM tag ()
+displaySet _     _   [] = return ()
+displaySet printResult indent results = Haskeline.outputStr "{ " >> go results where
+  prefix = List.replicate indent ' '
+  putPrefix = Haskeline.outputStr prefix
+
+  go [] = putPrefix >> Haskeline.outputStrLn "}"
+  go xs = do
+    -- TODO: make the number of elements per step configurable
+    let (curBlock, rest) = splitAt 10 xs
+    sequence_ $ List.intersperse (putPrefix >> Haskeline.outputStr ", ") $ map (printResult $ indent + 2) curBlock
+    if null rest
+      then go []
+      else do
+        mch <- Haskeline.getInputChar "More (y/n)? "
+        Haskeline.outputStr ", "
+        if fromMaybe 'n' mch `elem` "yYjJ"
+          then go rest
+          else Haskeline.outputStr "... " >> go []

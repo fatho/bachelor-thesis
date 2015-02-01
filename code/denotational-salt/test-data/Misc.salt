@@ -1,0 +1,6 @@
+{- Transforms a list to a set -}
+toSet :: forall a. List a -> Set a
+toSet = foldr<:a,Set a:> (\x :: a -> \set :: Set a -> choose<:a:> {x} set) failed<:Set a:>
+
+iterate :: forall a. (a -> a) -> a -> List a
+iterate = \f :: (a -> a) -> \x :: a -> Cons<:a:> x (iterate<:a:> f (f x))

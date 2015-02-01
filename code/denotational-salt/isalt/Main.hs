@@ -1,8 +1,7 @@
-{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE EmptyDataDecls             #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -11,15 +10,15 @@ module Main where
 
 import           Control.Applicative
 import           Control.Lens
-import qualified Control.Monad.Logic                   as Logic
+import qualified Control.Monad.Logic                  as Logic
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
-import qualified Data.Set                              as Set
-import qualified Text.PrettyPrint.ANSI.Leijen          as PP
+import qualified Data.Set                             as Set
+import qualified Text.PrettyPrint.ANSI.Leijen         as PP
 import           Text.Trifecta
 
-import qualified FunLogic.Core.Repl                    as Repl
+import qualified FunLogic.Core.Repl                   as Repl
 import qualified Language.SaLT.Semantics.Denotational as Denot
 
 import qualified Language.SaLT.AST                    as SaLT
@@ -29,7 +28,7 @@ import qualified Language.SaLT.Prelude                as SaLT
 import qualified Language.SaLT.Pretty                 as SaLT
 import qualified Language.SaLT.TypeChecker            as SaLT
 
-import qualified Debug.Trace                           as Debug
+import qualified Debug.Trace                          as Debug
 
 -- | Tag identifying the SaLT REPL.
 data SaLTRepl
@@ -92,11 +91,12 @@ doEvaluate expr = Repl.alwaysContinue $
     Left tyerr -> Repl.putDocLn $ PP.pretty tyerr
     Right _   -> do
       interactiveMod <- use Repl.replModule
-      --stepIndex      <- use replStepMax
-      let stepIndex = Denot.Infinity --5 :: Integer
-      --let resultValue = Denot.mapValueSet Omega.each Omega.runOmega $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
-      let resultValue = Denot.mapValueSet undefined (Logic.observeMany 10) $ Denot.runEval (Denot.eval expr) interactiveMod stepIndex
-      Repl.putDocLn $ PP.pretty resultValue
+      let eval' :: (Denot.NonDeterministic n, Denot.StepIndex idx) => idx -> Denot.Value n
+          eval' = Denot.runEval (Denot.eval expr) interactiveMod
+      result <- uses Repl.replStepMode $ \case
+        Repl.StepFixed n   -> eval' n
+        Repl.StepUnlimited -> eval' Denot.Infinity
+      displayValue 0 result
 
 -- | SaLT specific REPL commands.
 cuminReplCommands :: [Repl.CommandDesc SaLTRepl]
@@ -127,3 +127,13 @@ main :: IO ()
 main = do
   PP.putDoc header
   Repl.runRepl environment ()
+
+-- | Displays a SaLT value, using 'displayValueSet' for set values.
+displayValue :: Int -> Denot.Value Logic.Logic -> Repl.ReplInputM SaLTRepl ()
+displayValue indent val = case val of
+  Denot.VSet vset _ -> displayValueSet indent (Logic.observeAll vset)
+  other -> Repl.putDocLn $ PP.pretty other
+
+-- | Incremental output of results.
+displayValueSet :: Int -> [Denot.Value Logic.Logic] -> Repl.ReplInputM SaLTRepl ()
+displayValueSet = Repl.displaySet displayValue

@@ -16,6 +16,8 @@ module Language.SaLT.Semantics.Denotational
   -- * step indices
   , Core.Infinity (..)
   , Core.StepIndex (..)
+  -- * further core types
+  , Core.NonDeterministic
   ) where
 
 import           Control.Applicative
@@ -175,7 +177,7 @@ eval (SaLT.EFun fun tyargs) = do
       curEnv <- ask
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
       -- evaluate body
-      Core.bindTyVars tyEnv $ eval body
+      Core.decrementStep $ Core.bindTyVars tyEnv $ eval body
 eval (SaLT.ECon con _) = do
   (SaLT.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   let f _ rst dxs = mkFun $ \x -> rst (dxs . (x:))
@@ -231,7 +233,8 @@ primOp SaLT.PrimBind = primBind
 primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
 primBind (VSet vs _) (VFun f _) = mkSet $ vs Logic.>>- \val -> case f val of
   VSet rs _ -> rs
-  _         -> error ">>= : type error"
+  VBot v    -> return $ VBot v
+  _         -> error ">>= : type error: "
 primBind _ _ = error ">>= : wrong arguments"
 
 -- | Primitive equality operator which is built-in for naturals.

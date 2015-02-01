@@ -37,6 +37,7 @@ module FunLogic.Core.Repl
   , Internal.mkProperty
   -- * Utility
   , Internal.putDocLn
+  , Internal.displaySet
   ) where
 
 import           Control.Applicative

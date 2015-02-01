@@ -100,7 +100,7 @@ runEval action context stepMax = runReaderT action env where
   cns = context ^. FL.modADTs . traverse . to FL.adtConstructorTypes
 
 -- | Decrements the step index by one in the action passed as argument
-decrementStep :: (StepIndex idx, Monad n) => Eval bnd val idx n a -> Eval bnd val idx n a
+decrementStep :: (MonadReader (EvalEnv bnd val idx n) m, StepIndex idx) => m a -> m a
 decrementStep = local (stepIdx %~ decrement)
 
 -- | Converts list to an arbitrary non-determiniTstic monad.
