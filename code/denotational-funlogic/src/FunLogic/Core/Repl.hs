@@ -93,7 +93,7 @@ buildInitialState env cs = ReplState
   , _replHelpText       = buildHelpDoc (env ^. replCustomCommands) (env ^. replCustomProperties)
   , _replStepMode       = Denot.StepNatural 10
   , _replResultsPerStep = 10
-  , _replEvalStrategy   = DFS
+  , _replEvalStrategy   = BFS
   }
 
 -- | Start the REPL.

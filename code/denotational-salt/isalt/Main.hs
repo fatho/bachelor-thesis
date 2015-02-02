@@ -14,7 +14,6 @@ module Main where
 import           Control.Applicative
 import           Control.Lens
 import qualified Control.Monad.Logic                  as Logic
-import qualified Control.Monad.Logic.Class.Extended   as LogicExt
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
@@ -23,6 +22,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen         as PP
 import           Text.Trifecta
 
 import qualified FunLogic.Core.Repl                   as Repl
+import qualified FunLogic.Semantics.Search            as Search
 import qualified Language.SaLT.Semantics.Denotational as Denot
 
 import qualified Language.SaLT.AST                    as SaLT
@@ -64,8 +64,8 @@ interactivePrelude :: SaLT.Module
 interactivePrelude = SaLT.preludeModule & SaLT.modName .~ "Interactive"
 
 -- | Load and type check a SaLT file.
-cuminLoader :: FilePath -> IO (Either PP.Doc SaLT.Module)
-cuminLoader filePath = runEitherT $ do
+saltLoader :: FilePath -> IO (Either PP.Doc SaLT.Module)
+saltLoader filePath = runEitherT $ do
   modul <- EitherT $ SaLT.buildModuleFromFile filePath
   bimapEitherT PP.pretty (const modul) $ hoistEither
     $ SaLT.evalTC (SaLT.unsafeIncludeModule SaLT.preludeModule >> SaLT.checkModule modul) def def
@@ -75,10 +75,10 @@ environment :: Repl.ReplEnv SaLTRepl
 environment = Repl.ReplEnv
   { Repl._replPrelude = interactivePrelude
   , Repl._replPrompt  = PP.blue (PP.text "{\x03BB}> ")
-  , Repl._replLoader  = cuminLoader
+  , Repl._replLoader  = saltLoader
   , Repl._replInspectDefinition = SaLT.prettyBinding
   , Repl._replCustomProperties = []
-  , Repl._replCustomCommands = cuminReplCommands
+  , Repl._replCustomCommands = saltReplCommands
   , Repl._replDefaultParse = runInteractive $ doEvaluate <$> parseExpression
   }
 
@@ -88,23 +88,20 @@ doGetType expr = Repl.alwaysContinue $ checkInteractiveExpr expr >>= \case
   Left errMsg -> Repl.putDocLn $ PP.pretty errMsg
   Right ty -> Repl.putDocLn $ SaLT.prettyType ty
 
+-- | Monad with depth-first-search characteristics.
+type DFSMonad = Search.UnFair Logic.Logic
+-- | Monad with breadth-first-search characteristics.
+type BFSMonad = Logic.Logic
 -- | A value with observable results of non-determinism.
-data ObservableValue = forall m. (LogicExt.Observable m) => ObservableValue (Denot.Value m)
+data ObservableValue = forall m. (Search.Observable m) => ObservableValue (Denot.Value m)
 
 -- | Evaluates a SaLT expression using the given strategy.
-evalWithMonad :: (Denot.NonDeterministic m, LogicExt.Observable m, Denot.StepIndex idx)
-         => Repl.StrategyMonad m
-         -> Denot.EvalExp idx m (Denot.Value m)
-         -> SaLT.Module -> idx -> ObservableValue
-evalWithMonad _ action modul idx = ObservableValue (Denot.runEval action modul idx)
-
--- | Evaluates a SaLT expression using the given strategy.
-evalWithStrategy :: (Denot.StepIndex idx)
-         => Repl.Strategy
-         -> (forall m. (Denot.NonDeterministic m) => Denot.EvalExp idx m (Denot.Value m) )
-         -> SaLT.Module -> idx -> ObservableValue
-evalWithStrategy Repl.DFS action = evalWithMonad Repl.MonadDFS action
-evalWithStrategy Repl.BFS action = evalWithMonad Repl.MonadBFS action
+evalWithStrategy
+          :: Repl.Strategy
+          -> (forall m. (Denot.NonDeterministic m) => Denot.EvalExp m (Denot.Value m) )
+          -> SaLT.Module -> Denot.StepIndex -> ObservableValue
+evalWithStrategy Repl.DFS action modul idx = ObservableValue (Denot.runEval action modul idx :: Denot.Value DFSMonad)
+evalWithStrategy Repl.BFS action modul idx = ObservableValue (Denot.runEval action modul idx :: Denot.Value BFSMonad)
 
 -- | implements evaluation command
 doEvaluate :: SaLT.Exp -> Repl.Command SaLTRepl
@@ -113,17 +110,14 @@ doEvaluate expr = Repl.alwaysContinue $
     Left tyerr -> Repl.putDocLn $ PP.pretty tyerr
     Right _   -> do
       interactiveMod <- use Repl.replModule
-      strategy <- use Repl.replEvalStrategy
-      let eval' :: (Denot.StepIndex idx) => idx -> ObservableValue
-          eval' = evalWithStrategy strategy (Denot.eval expr) interactiveMod
-      (ObservableValue result) <- uses Repl.replStepMode $ \case
-        Repl.StepFixed n   -> eval' n
-        Repl.StepUnlimited -> eval' Denot.Infinity
-      displayValue 0 result
+      strategy       <- use Repl.replEvalStrategy
+      stepIndex      <- use Repl.replStepMode
+      case evalWithStrategy strategy (Denot.eval expr) interactiveMod stepIndex of
+        ObservableValue result -> displayValue 0 result
 
 -- | SaLT specific REPL commands.
-cuminReplCommands :: [Repl.CommandDesc SaLTRepl]
-cuminReplCommands =
+saltReplCommands :: [Repl.CommandDesc SaLTRepl]
+saltReplCommands =
   [ Repl.CommandDesc "type" (runInteractive $ doGetType <$> parseExpression)
       ["<expression>"] "Prints the type of an expression"
   ]
@@ -152,11 +146,11 @@ main = do
   Repl.runRepl environment ()
 
 -- | Displays a SaLT value, using 'displayValueSet' for set values.
-displayValue :: (LogicExt.Observable n) => Int -> Denot.Value n -> Repl.ReplInputM SaLTRepl ()
+displayValue :: (Search.Observable n) => Int -> Denot.Value n -> Repl.ReplInputM SaLTRepl ()
 displayValue indent val = case val of
-  Denot.VSet vset _ -> displayValueSet indent (LogicExt.observeAll vset)
+  Denot.VSet vset _ -> displayValueSet indent (Search.observeAll vset)
   other -> Repl.putDocLn $ PP.pretty other
 
 -- | Incremental output of results.
-displayValueSet :: (LogicExt.Observable n) => Int -> [Denot.Value n] -> Repl.ReplInputM SaLTRepl ()
+displayValueSet :: (Search.Observable n) => Int -> [Denot.Value n] -> Repl.ReplInputM SaLTRepl ()
 displayValueSet = Repl.displaySet displayValue
