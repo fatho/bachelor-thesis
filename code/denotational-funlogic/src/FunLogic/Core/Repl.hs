@@ -20,11 +20,15 @@ module FunLogic.Core.Repl
   -- * REPL state
   , Internal.ReplState (..)
   , Internal.StepMode (..)
+  , Internal.Strategy (..)
+  , Internal.StrategyMonad (..)
   , Internal.replModule
   , Internal.replFiles
   , Internal.replCustomState
   , Internal.replHelpText
   , Internal.replStepMode
+  , Internal.replResultsPerStep
+  , Internal.replEvalStrategy
   -- * Type families
   , Internal.TagBinding
   , Internal.TagState
@@ -83,12 +87,13 @@ parseOptions = do
 -- | Build the initial REPL state from the environment
 buildInitialState :: TagIsBinding tag => ReplEnv tag -> TagState tag -> ReplState tag
 buildInitialState env cs = ReplState
-  { _replModule       = env ^. replPrelude
-  , _replFiles        = []
-  , _replCustomState  = cs
-  , _replHelpText     = buildHelpDoc (env ^. replCustomCommands) (env ^. replCustomProperties)
-  , _replStepMode     = StepFixed 10
+  { _replModule         = env ^. replPrelude
+  , _replFiles          = []
+  , _replCustomState    = cs
+  , _replHelpText       = buildHelpDoc (env ^. replCustomCommands) (env ^. replCustomProperties)
+  , _replStepMode       = StepFixed 10
   , _replResultsPerStep = 10
+  , _replEvalStrategy   = DFS
   }
 
 -- | Start the REPL.

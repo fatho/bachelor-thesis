@@ -136,6 +136,8 @@ builtinProperties =
             PP.<$> PP.text "'inf'   for an unlimited evaluation depth" ) )
     , mkProperty "numresults" replResultsPerStep (fromInteger <$> natural)
         (PP.text "The number of results in a set to be displayed at once.")
+    , mkProperty "strategy" replEvalStrategy (DFS <$ symbol "DFS" <|> BFS <$ symbol "BFS")
+        (PP.text "The evaluation strategy, either breadth-first (BFS) or depth-first (DFS).")
     ]
 
 -- | Creates a property description from a lens into the 'ReplState' and a parser.

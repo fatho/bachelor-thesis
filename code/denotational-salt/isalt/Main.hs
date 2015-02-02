@@ -1,16 +1,20 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE EmptyDataDecls             #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE EmptyDataDecls            #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 module Main where
 
 import           Control.Applicative
 import           Control.Lens
 import qualified Control.Monad.Logic                  as Logic
+import qualified Control.Monad.Logic.Class.Extended   as LogicExt
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
@@ -84,6 +88,24 @@ doGetType expr = Repl.alwaysContinue $ checkInteractiveExpr expr >>= \case
   Left errMsg -> Repl.putDocLn $ PP.pretty errMsg
   Right ty -> Repl.putDocLn $ SaLT.prettyType ty
 
+-- | A value with observable results of non-determinism.
+data ObservableValue = forall m. (LogicExt.Observable m) => ObservableValue (Denot.Value m)
+
+-- | Evaluates a SaLT expression using the given strategy.
+evalWithMonad :: (Denot.NonDeterministic m, LogicExt.Observable m, Denot.StepIndex idx)
+         => Repl.StrategyMonad m
+         -> Denot.EvalExp idx m (Denot.Value m)
+         -> SaLT.Module -> idx -> ObservableValue
+evalWithMonad _ action modul idx = ObservableValue (Denot.runEval action modul idx)
+
+-- | Evaluates a SaLT expression using the given strategy.
+evalWithStrategy :: (Denot.StepIndex idx)
+         => Repl.Strategy
+         -> (forall m. (Denot.NonDeterministic m) => Denot.EvalExp idx m (Denot.Value m) )
+         -> SaLT.Module -> idx -> ObservableValue
+evalWithStrategy Repl.DFS action = evalWithMonad Repl.MonadDFS action
+evalWithStrategy Repl.BFS action = evalWithMonad Repl.MonadBFS action
+
 -- | implements evaluation command
 doEvaluate :: SaLT.Exp -> Repl.Command SaLTRepl
 doEvaluate expr = Repl.alwaysContinue $
@@ -91,9 +113,10 @@ doEvaluate expr = Repl.alwaysContinue $
     Left tyerr -> Repl.putDocLn $ PP.pretty tyerr
     Right _   -> do
       interactiveMod <- use Repl.replModule
-      let eval' :: (Denot.NonDeterministic n, Denot.StepIndex idx) => idx -> Denot.Value n
-          eval' = Denot.runEval (Denot.eval expr) interactiveMod
-      result <- uses Repl.replStepMode $ \case
+      strategy <- use Repl.replEvalStrategy
+      let eval' :: (Denot.StepIndex idx) => idx -> ObservableValue
+          eval' = evalWithStrategy strategy (Denot.eval expr) interactiveMod
+      (ObservableValue result) <- uses Repl.replStepMode $ \case
         Repl.StepFixed n   -> eval' n
         Repl.StepUnlimited -> eval' Denot.Infinity
       displayValue 0 result
@@ -129,11 +152,11 @@ main = do
   Repl.runRepl environment ()
 
 -- | Displays a SaLT value, using 'displayValueSet' for set values.
-displayValue :: Int -> Denot.Value Logic.Logic -> Repl.ReplInputM SaLTRepl ()
+displayValue :: (LogicExt.Observable n) => Int -> Denot.Value n -> Repl.ReplInputM SaLTRepl ()
 displayValue indent val = case val of
-  Denot.VSet vset _ -> displayValueSet indent (Logic.observeAll vset)
+  Denot.VSet vset _ -> displayValueSet indent (LogicExt.observeAll vset)
   other -> Repl.putDocLn $ PP.pretty other
 
 -- | Incremental output of results.
-displayValueSet :: Int -> [Denot.Value Logic.Logic] -> Repl.ReplInputM SaLTRepl ()
+displayValueSet :: (LogicExt.Observable n) => Int -> [Denot.Value n] -> Repl.ReplInputM SaLTRepl ()
 displayValueSet = Repl.displaySet displayValue

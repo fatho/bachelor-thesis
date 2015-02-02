@@ -9,3 +9,6 @@ data List3 a = Cons3 a (List3 a) | Nil3
 
 {- Same here -}
 data List4 a = Nil4 | Cons4 (List4 a) a
+
+foo :: Nat -> Nat
+foo n = choose<:Nat:> n (foo (n + 1))
