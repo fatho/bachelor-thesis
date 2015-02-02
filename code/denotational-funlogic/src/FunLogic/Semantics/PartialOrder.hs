@@ -13,6 +13,20 @@ class Eq a => PartialOrd a where
 compatible :: PartialOrd a => a -> a -> Bool
 compatible x y = x `leq` y || y `leq` x
 
+-- | Returns the lesser of both elements, if they are compatible.
+partialMin :: PartialOrd a => a -> a -> Maybe a
+partialMin x y
+  | x `leq` y = Just x
+  | y `leq` x = Just y
+  | otherwise = Nothing
+
+-- | Returns the greater of both element, if they are compatible.
+partialMax :: PartialOrd a => a -> a -> Maybe a
+partialMax x y
+  | x `leq` y = Just y
+  | y `leq` x = Just x
+  | otherwise = Nothing
+
 -- | Two elements are incompatible iff neither x <= y nor y <= x.
 incompatible :: PartialOrd a => a -> a -> Bool
 incompatible x y = not $ compatible x y
