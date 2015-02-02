@@ -22,9 +22,7 @@ module Language.SaLT.Semantics.Denotational
 
 import           Control.Applicative
 import           Control.Lens                    hiding (each)
-import qualified Control.Monad.Logic.Class       as Logic
 import           Control.Monad.Reader
-import qualified Data.Foldable                   as F
 import qualified Data.List                       as List
 import qualified Data.Map                        as M
 import           Data.Maybe
@@ -35,6 +33,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 
 import qualified FunLogic.Semantics.Denotational as Core
 import qualified FunLogic.Semantics.PartialOrder as PO
+import qualified FunLogic.Semantics.Search       as Search
 
 import qualified Language.SaLT.AST               as SaLT
 
@@ -127,16 +126,16 @@ valueToList _ = Nothing
 type EvalEnv = Core.EvalEnv SaLT.Binding Value
 
 -- | Evaluation monad with explicit non-determinism via 'VSet' (Value)
-type EvalExp idx n = ReaderT (EvalEnv idx n) Identity
+type EvalExp n = ReaderT (EvalEnv n) Identity
 
 -- | Run Eval computations.
-runEval :: EvalExp idx n a -> SaLT.Module -> idx -> a
+runEval :: EvalExp n a -> SaLT.Module -> Core.StepIndex -> a
 runEval action context stepMax = runReader action env where
   env = Core.EvalEnv M.empty M.empty context cns stepMax
   cns = context ^. SaLT.modADTs . traverse . to SaLT.adtConstructorTypes
 
 -- | Returns all possible inhabitants of a type as a set.
-unknown :: (Core.StepIndex idx, Core.NonDeterministic n) => SaLT.Type -> EvalExp idx n (Value n)
+unknown :: (Core.NonDeterministic n) => SaLT.Type -> EvalExp n (Value n)
 unknown = captureNonDet . Core.anything
 
 -- | Returns the least element of a given type.
@@ -153,7 +152,7 @@ captureNonDet = mapReaderT (Identity . mkSet)
 -- | Evaluates a SaLT expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
-eval :: (Core.StepIndex idx, Core.NonDeterministic n) => SaLT.Exp -> EvalExp idx n (Value n)
+eval :: (Core.NonDeterministic n) => SaLT.Exp -> EvalExp n (Value n)
 -- there is no non-determinism in the following cases:
 ------------------------------------------------------
 eval (SaLT.EVar var) = fromMaybe (error "local variable not declared") <$> view (Core.termEnv . at var)
@@ -200,7 +199,7 @@ mkSetSingleton :: Applicative n => Value n -> Value n
 mkSetSingleton = mkSet . pure
 
 -- | Matches the given value against the list of case alternatives and evaluates it.
-patternMatch :: (Core.StepIndex idx, Core.NonDeterministic n) => Value n -> [SaLT.Alt] -> EvalExp idx n (Value n)
+patternMatch :: (Core.NonDeterministic n) => Value n -> [SaLT.Alt] -> EvalExp n (Value n)
 patternMatch (VBot x)   _ = return $ VBot x
 patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
@@ -219,7 +218,7 @@ matches :: SaLT.DataConName -> SaLT.Alt -> Bool
 matches _ (SaLT.Alt (SaLT.PVar _) _) = True
 matches cname (SaLT.Alt (SaLT.PCon pname _) _) = cname == pname
 
-evalPrim :: (Core.NonDeterministic n) => SaLT.PrimOp -> [Value n] -> EvalExp idx n (Value n)
+evalPrim :: (Core.NonDeterministic n) => SaLT.PrimOp -> [Value n] -> EvalExp n (Value n)
 evalPrim prim [x,y] = return $ primOp prim x y
 evalPrim _ _        = error "evalPrim: invalid number of arguments for primitive operation"
 
@@ -230,7 +229,7 @@ primOp SaLT.PrimBind = primBind
 
 -- | Primitve monadic bind on sets. Uses fair conjunction.
 primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
-primBind (VSet vs _) (VFun f _) = mkSet $ vs Logic.>>- \val -> case f val of
+primBind (VSet vs _) (VFun f _) = mkSet $ vs Search.>>? \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error: "
