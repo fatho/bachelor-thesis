@@ -14,6 +14,7 @@ module FunLogic.Internal.Repl.Commands
 
 import           Control.Applicative
 import           Control.Lens
+import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.State.Class
 import           Control.Monad.Trans
@@ -86,10 +87,15 @@ doSetProp prop val = alwaysContinue $
     Nothing -> putDocLn $ PP.red $ PP.text "unknown property"
 
 -- | Shows the value of a property.
-doGetProp :: String -> Command tag
-doGetProp prop = alwaysContinue $
+doGetProp :: Maybe String -> Command tag
+doGetProp Nothing = alwaysContinue $ do
+  props <- view replCustomProperties
+  forM_ props $ \(PropDesc name pget _ _) -> do
+    valDoc <- lift pget
+    putDocLn $ PP.text name PP.<+> PP.text "=" PP.<+> valDoc
+doGetProp (Just prop) = alwaysContinue $
   views replCustomProperties (List.find ((List.isPrefixOf prop) . propName)) >>= \case
-    Just (PropDesc _ pget _ _) -> lift pget >>= liftIO . putDocLn
+    Just (PropDesc _ pget _ _) -> lift pget >>= putDocLn
     Nothing -> putDocLn $ PP.red $ PP.text "unknown property"
 
 -- | Shows the help document
@@ -112,14 +118,14 @@ builtinCommands =
     , CommandDesc "def" (doShowDefinition <$> (FL.varIdent <|> FL.conIdent)) ["<name>"] "Shows the definition of an ADT or top-level binding"
     , CommandDesc "list" (pure doListDefinitions) [] "Shows a list of all definitions"
     , CommandDesc "set" (doSetProp <$> propNameP <* skipOptional (symbolic '=') <*> many anyChar) ["<property>", "<value>"] "Sets the value of a property"
-    , CommandDesc "get" (doGetProp <$> propNameP) ["<property>"] "Reads the value of a property"
+    , CommandDesc "get" (doGetProp <$> optional propNameP) ["<property>"] "Reads the value of a property"
     , CommandDesc "help" (pure doShowHelp) [] "Prints this help message"
     , CommandDesc "load" (doLoadFile <$> pathParser) ["<filename>"] "Loads a module from a file."
     ]
   where
-    propNameP = token $ many $ Char.toLower <$> letter
+    propNameP  = token $ some $ Char.toLower <$> letter
     pathParser = stringLiteral <|> (strip <$> many anyChar)
-    strip = Text.unpack . Text.strip . Text.pack
+    strip      = Text.unpack . Text.strip . Text.pack
 
 -- | Returns a list of commands having "cmd" as prefix.
 commandsByPrefix :: String -> [ CommandDesc tag ] -> [ CommandDesc tag ]
@@ -137,7 +143,7 @@ builtinProperties =
             PP.<$> PP.text "'inf'   for an unlimited evaluation depth" ) )
     , mkProperty "numresults" replResultsPerStep (fromInteger <$> natural)
         (PP.text "The number of results in a set to be displayed at once.")
-    , mkProperty "strategy" replEvalStrategy (DFS <$ symbol "DFS" <|> BFS <$ symbol "BFS")
+    , mkProperty "strategy" replEvalStrategy (parseAbbrev show [BFS, DFS])
         (PP.text "The evaluation strategy, either breadth-first (BFS) or depth-first (DFS).")
     ]
 
@@ -153,5 +159,5 @@ mkProperty name access parser = PropDesc name (uses access PP.pretty) readAndSet
 stepModeParser :: Parser Denot.StepIndex
 stepModeParser = choice
     [ Denot.StepNatural  <$> natural
-    , Denot.StepInfinity <$  symbol "inf"
+    , Denot.StepInfinity <$  parseAbbrev id ["infinity"]
     ]

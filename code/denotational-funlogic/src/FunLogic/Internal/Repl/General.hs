@@ -17,11 +17,14 @@ module FunLogic.Internal.Repl.General
   , putDocLn
   , resultToEither
   , while
+  , parseAbbrev
   ) where
 
+import           Control.Applicative
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Control.Monad.Reader
+import qualified Data.Char                    as Char
 import qualified Data.List                    as List
 import qualified Data.Map                     as M
 import           Data.Maybe
@@ -137,3 +140,14 @@ displaySet printResult indent results = Haskeline.outputStr "{ " >> go results w
         if fromMaybe 'n' mch `elem` "yYjJ"
           then go rest
           else Haskeline.outputStr "... " >> go []
+
+
+parseAbbrev :: (v -> String) -> [v] -> Parser v
+parseAbbrev getKey values = (do
+    let strLower = map Char.toLower
+    name <- strLower <$> some letter
+    case List.filter ((List.isPrefixOf name) . strLower . getKey) values of
+      [] -> fail $ "Unknown value. Candidates: " ++ List.intercalate ", " (map getKey values)
+      [x] -> return x
+      multiple -> fail $ name ++ " is ambigous. Candidates are " ++ List.intercalate ", " (map getKey multiple)
+  ) <?> "value"
