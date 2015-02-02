@@ -106,7 +106,7 @@ instance Ord (Value n) where
     rank (VBot _)   = 3
     rank (VSet _ _) = 4
 
-instance F.Foldable n => PP.Pretty (Value n) where
+instance PP.Pretty (Value n) where
   pretty val@(VCon con args) = case valueToList val of
     Nothing
       | null args -> PP.text con
@@ -116,8 +116,7 @@ instance F.Foldable n => PP.Pretty (Value n) where
   pretty (VFun _ uid)    = PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
   pretty (VBot ann)      = PP.text "\x22A5"
     PP.<> if null ann then PP.empty else PP.enclose PP.langle PP.rangle $ PP.text ann -- "_|_"
-  pretty (VSet vs _)    = PP.encloseSep PP.lbrace PP.rbrace PP.comma
-                             (F.foldr (\val xs -> PP.pretty val : xs) [] vs)
+  pretty (VSet _ uid)    = PP.text "<set:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
 
 -- | If the value is acutally a list, return this list
 valueToList :: Value n -> Maybe [Value n]
@@ -127,7 +126,7 @@ valueToList _ = Nothing
 
 type EvalEnv = Core.EvalEnv SaLT.Binding Value
 
--- | Evaluation monad with explicit non-determinism via VSet (Value)
+-- | Evaluation monad with explicit non-determinism via 'VSet' (Value)
 type EvalExp idx n = ReaderT (EvalEnv idx n) Identity
 
 -- | Run Eval computations.

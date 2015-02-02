@@ -2,7 +2,9 @@
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE EmptyDataDecls        #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -25,6 +27,8 @@ module FunLogic.Internal.Repl.Types
   , StepMode (..)
   , ReplState (..)
   , ReplEnv (..)
+  , Strategy (..)
+  , StrategyMonad (..)
   -- * Lenses for ReplState
   , replModule
   , replFiles
@@ -32,6 +36,7 @@ module FunLogic.Internal.Repl.Types
   , replHelpText
   , replStepMode
   , replResultsPerStep
+  , replEvalStrategy
   -- * Lenses for ReplEnv
   , replPrelude
   , replLoader
@@ -48,14 +53,17 @@ module FunLogic.Internal.Repl.Types
 
 import           Control.Lens
 import           Control.Monad.IO.Class
+import qualified Control.Monad.Logic                as Logic
+import qualified Control.Monad.Logic.Class          as Logic
+import qualified Control.Monad.Logic.Class.Extended as LogicExt
 import           Control.Monad.Reader
 -- REMARK: Haskeline.MonadException is only predefined for State.Strict
 import           Control.Monad.State.Strict
-import qualified System.Console.Haskeline     as Haskeline
-import qualified Text.PrettyPrint.ANSI.Leijen as PP
+import qualified System.Console.Haskeline           as Haskeline
+import qualified Text.PrettyPrint.ANSI.Leijen       as PP
 import           Text.Trifecta
 
-import qualified FunLogic.Core.AST            as FL
+import qualified FunLogic.Core.AST                  as FL
 
 -- | Generic return type reporting either success or an error message.
 data Status = StatusOK | StatusErr PP.Doc
@@ -102,6 +110,17 @@ data StepMode
   -- of the interpreter.
   deriving (Show, Eq)
 
+-- | Evaluation strategy for the denotational semantics.
+data Strategy = DFS | BFS deriving (Show, Eq, Enum, Bounded)
+
+-- | Associates a strategy value with a type of a monad.
+data StrategyMonad m where
+  MonadDFS :: StrategyMonad LogicExt.UnFairLogic
+  MonadBFS :: StrategyMonad Logic.Logic
+
+instance PP.Pretty Strategy where
+  pretty = PP.text . show
+
 instance PP.Pretty StepMode where
   pretty (StepFixed n)   = PP.integer n
   pretty (StepUnlimited) = PP.text "\x221E" -- (infinity)
@@ -142,18 +161,19 @@ data Prompt m a
 -- | Internal state of the REPL.
 data ReplState tag
   = ReplState
-  { _replModule      :: TagModule tag
+  { _replModule         :: TagModule tag
   -- ^ module merged from all loaded modules
-  , _replFiles       :: [FilePath]
+  , _replFiles          :: [FilePath]
   -- ^ loaded files
-  , _replCustomState :: TagState tag
+  , _replCustomState    :: TagState tag
   -- ^ user defined state
-  , _replHelpText    :: PP.Doc
+  , _replHelpText       :: PP.Doc
   -- ^ repl help document
-  , _replStepMode    :: StepMode
+  , _replStepMode       :: StepMode
   -- ^ the way how to initialize the step indices for evaluating a computation
   , _replResultsPerStep :: Int
   -- ^ Number of results (in sets) printed at once per step.
+  , _replEvalStrategy   :: Strategy
   }
 
 -- | Environment of the REPL, passed from outside.
