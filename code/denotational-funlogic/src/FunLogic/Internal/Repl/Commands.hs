@@ -78,7 +78,7 @@ shortBinding bnd = PP.text (bnd ^. FL.bindingName) PP.<+> PP.text "::"
 -- | Sets a property.
 doSetProp :: String -> String -> Command tag
 doSetProp prop val = alwaysContinue $
-  views replCustomProperties (List.find ((== prop) . propName)) >>= \case
+  views replCustomProperties (List.find ((List.isPrefixOf prop) . propName)) >>= \case
     Just (PropDesc _ _ pset _) -> lift (pset val) >>= \case
       StatusOK -> putDocLn $ PP.text "OK"
       StatusErr msg -> putDocLn msg
@@ -87,7 +87,7 @@ doSetProp prop val = alwaysContinue $
 -- | Shows the value of a property.
 doGetProp :: String -> Command tag
 doGetProp prop = alwaysContinue $
-  views replCustomProperties (List.find ((== prop) . propName)) >>= \case
+  views replCustomProperties (List.find ((List.isPrefixOf prop) . propName)) >>= \case
     Just (PropDesc _ pget _ _) -> lift pget >>= liftIO . putDocLn
     Nothing -> putDocLn $ PP.red $ PP.text "unknown property"
 
@@ -133,8 +133,9 @@ builtinProperties =
          PP.<$> PP.text "Possible values are:"
          PP.<$> PP.indent 2
             (      PP.text "'n'     for a fixed evaluation depth"
-            PP.<$> PP.text "'n + d' for starting at n, after each evaluation increasing depth by d"
             PP.<$> PP.text "'inf'   for an unlimited evaluation depth" ) )
+    , mkProperty "numresults" replResultsPerStep (fromInteger <$> natural)
+        (PP.text "The number of results in a set to be displayed at once.")
     ]
 
 -- | Creates a property description from a lens into the 'ReplState' and a parser.
