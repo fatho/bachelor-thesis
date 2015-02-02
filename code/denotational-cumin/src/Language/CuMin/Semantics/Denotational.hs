@@ -18,9 +18,6 @@ module Language.CuMin.Semantics.Denotational
 
 import           Control.Applicative
 import           Control.Lens                       hiding (each)
-import           Control.Monad
-import qualified Control.Monad.Logic.Class          as Logic
-import qualified Control.Monad.Logic.Class.Extended as LogicExt
 import           Control.Monad.Reader
 import qualified Data.List                          as List
 import qualified Data.Map                           as M
@@ -30,13 +27,12 @@ import           Data.Unique
 import qualified System.IO.Unsafe                   as UIO
 import qualified Text.PrettyPrint.ANSI.Leijen       as PP
 
+
+import qualified FunLogic.Semantics.Search          as Search
 import qualified FunLogic.Semantics.Denotational    as Core
 import qualified FunLogic.Semantics.PartialOrder    as PO
 
 import qualified Language.CuMin.AST                 as CuMin
-import qualified Language.CuMin.TypeChecker         as CuMin
-
-import qualified Debug.Trace                        as Debug
 
 -- | A CuMin value, parameterized over a non-deterministic Monad n.
 data Value n
@@ -111,12 +107,12 @@ valueToList _ = Nothing
 type EvalEnv = Core.EvalEnv CuMin.Binding Value
 
 -- | The evaluation monad is just a reader monad with the above environment.
-type Eval idx n = ReaderT (EvalEnv idx n) n
+type Eval n = ReaderT (EvalEnv n) n
 
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
-eval :: (Core.StepIndex idx, Core.NonDeterministic n) => CuMin.Exp -> Eval idx n (Value n)
+eval :: (Core.NonDeterministic n) => CuMin.Exp -> Eval n (Value n)
 -- there is no non-determinism in the following cases:
 ------------------------------------------------------
 eval (CuMin.EVar var) = fromMaybe (error "local variable not declared") <$> view (Core.termEnv . at var)
@@ -147,21 +143,21 @@ eval (CuMin.ECon con _) = do
 -- the following cases need fair choice:
 ------------------------------------------------------
 -- let (free) needs a fair choice of the bound value
-eval (CuMin.ELet var bnd body) = eval bnd Logic.>>- \val -> Core.bindVar var val (eval body)
-eval (CuMin.ELetFree var ty body) = Core.anything ty Logic.>>- \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELet var bnd body) = eval bnd Search.>>? \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELetFree var ty body) = Core.anything ty Search.>>? \val -> Core.bindVar var val (eval body)
 -- fair choice of caller and argument
 eval (CuMin.EApp funE argE) =
-  LogicExt.fairBind2 primApp (eval funE) (eval argE)
+  Search.fairBind2 primApp (eval funE) (eval argE)
 -- fair choice of prim arguments
 eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) =
-  LogicExt.liftFairM2 primEq (eval ex) (eval ey)
+  Search.liftFairM2 primEq (eval ex) (eval ey)
 eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) =
-  LogicExt.liftFairM2 primAdd (eval ex) (eval ey)
+  Search.liftFairM2 primAdd (eval ex) (eval ey)
 -- REMARK: Add future prim-ops to evaluator at this point
 eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
 -- fair choice of scrutinee
 eval (CuMin.ECase scrut alts) = eval scrut
-  Logic.>>- \scrutVal -> patternMatch scrutVal alts
+  Search.>>? \scrutVal -> patternMatch scrutVal alts
 
 -- | Creates a new function value with a unique ID.
 -- Uses unsafePerformIO internally.
@@ -169,7 +165,7 @@ mkFun :: (Value n -> n (Value n)) -> Value n
 mkFun f = UIO.unsafePerformIO $ VFun f <$> newUnique
 
 -- | Matches the given value against the list of case alternatives and evaluates it.
-patternMatch :: (Core.StepIndex idx, Core.NonDeterministic n) => Value n -> [CuMin.Alt] -> Eval idx n (Value n)
+patternMatch :: (Core.NonDeterministic n) => Value n -> [CuMin.Alt] -> Eval n (Value n)
 patternMatch (VBot x)   _ = return $ VBot x
 patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
@@ -204,7 +200,7 @@ primAdd (VBot n) (VBot _) = VBot n
 primAdd _ _ = error "primAdd: wrong type"
 
 -- | Function application lifted to values.
-primApp :: Core.NonDeterministic n => Value n -> Value n -> Eval idx n (Value n)
+primApp :: Core.NonDeterministic n => Value n -> Value n -> Eval n (Value n)
 primApp (VFun f _) a = lift $ f a
 primApp (VBot n) _ = return $ VBot n
 primApp _ _ = error "application of non-function type"

@@ -24,11 +24,10 @@ module FunLogic.Internal.Repl.Types
   , CmdLineOpt
   , Prompt (..)
   -- * State and Environment
-  , StepMode (..)
+  , Denot.StepIndex (..)
   , ReplState (..)
   , ReplEnv (..)
   , Strategy (..)
-  , StrategyMonad (..)
   -- * Lenses for ReplState
   , replModule
   , replFiles
@@ -53,9 +52,6 @@ module FunLogic.Internal.Repl.Types
 
 import           Control.Lens
 import           Control.Monad.IO.Class
-import qualified Control.Monad.Logic                as Logic
-import qualified Control.Monad.Logic.Class          as Logic
-import qualified Control.Monad.Logic.Class.Extended as LogicExt
 import           Control.Monad.Reader
 -- REMARK: Haskeline.MonadException is only predefined for State.Strict
 import           Control.Monad.State.Strict
@@ -63,6 +59,7 @@ import qualified System.Console.Haskeline           as Haskeline
 import qualified Text.PrettyPrint.ANSI.Leijen       as PP
 import           Text.Trifecta
 
+import qualified FunLogic.Semantics.Denotational    as Denot
 import qualified FunLogic.Core.AST                  as FL
 
 -- | Generic return type reporting either success or an error message.
@@ -101,29 +98,11 @@ data CmdLineOpt
 -- | A command is a monadic action returning whether the REPL should continue or exit.
 type Command tag = ReplInputM tag LoopAction
 
--- | Describes three ways how to set the step index for evaluating computations.
-data StepMode
-  = StepFixed Integer
-  -- ^ evaluates just with a fixed step index
-  | StepUnlimited
-  -- ^ Does not limit the evaluation depth. In combination with depth first search, this may prevent termination
-  -- of the interpreter.
-  deriving (Show, Eq)
-
 -- | Evaluation strategy for the denotational semantics.
 data Strategy = DFS | BFS deriving (Show, Eq, Enum, Bounded)
 
--- | Associates a strategy value with a type of a monad.
-data StrategyMonad m where
-  MonadDFS :: StrategyMonad LogicExt.UnFairLogic
-  MonadBFS :: StrategyMonad Logic.Logic
-
 instance PP.Pretty Strategy where
   pretty = PP.text . show
-
-instance PP.Pretty StepMode where
-  pretty (StepFixed n)   = PP.integer n
-  pretty (StepUnlimited) = PP.text "\x221E" -- (infinity)
 
 -- | Command parser with usage information
 data CommandDesc tag = CommandDesc
@@ -169,7 +148,7 @@ data ReplState tag
   -- ^ user defined state
   , _replHelpText       :: PP.Doc
   -- ^ repl help document
-  , _replStepMode       :: StepMode
+  , _replStepMode       :: Denot.StepIndex
   -- ^ the way how to initialize the step indices for evaluating a computation
   , _replResultsPerStep :: Int
   -- ^ Number of results (in sets) printed at once per step.

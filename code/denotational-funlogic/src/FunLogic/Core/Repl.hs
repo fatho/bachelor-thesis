@@ -19,9 +19,8 @@ module FunLogic.Core.Repl
   , Internal.replDefaultParse
   -- * REPL state
   , Internal.ReplState (..)
-  , Internal.StepMode (..)
+  , Denot.StepIndex (..)
   , Internal.Strategy (..)
-  , Internal.StrategyMonad (..)
   , Internal.replModule
   , Internal.replFiles
   , Internal.replCustomState
@@ -62,6 +61,7 @@ import           FunLogic.Internal.Repl.Commands as Internal
 import           FunLogic.Internal.Repl.General  as Internal
 import           FunLogic.Internal.Repl.Help     as Internal
 import           FunLogic.Internal.Repl.Types    as Internal
+import qualified FunLogic.Semantics.Denotational as Denot
 
 -- | Specifies behavior in case of user interruption with Ctrl+C.
 interruptionHandler :: ReplInputM tag LoopAction
@@ -91,7 +91,7 @@ buildInitialState env cs = ReplState
   , _replFiles          = []
   , _replCustomState    = cs
   , _replHelpText       = buildHelpDoc (env ^. replCustomCommands) (env ^. replCustomProperties)
-  , _replStepMode       = StepFixed 10
+  , _replStepMode       = Denot.StepNatural 10
   , _replResultsPerStep = 10
   , _replEvalStrategy   = DFS
   }

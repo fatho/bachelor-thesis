@@ -19,7 +19,7 @@ library
   exposed-modules:     FunLogic.Core.Repl
                        FunLogic.Semantics.Denotational
                        FunLogic.Semantics.PartialOrder
-                       Control.Monad.Logic.Class.Extended
+                       FunLogic.Semantics.Search
   other-modules:       FunLogic.Internal.Repl.Commands
                        FunLogic.Internal.Repl.General
                        FunLogic.Internal.Repl.Help
