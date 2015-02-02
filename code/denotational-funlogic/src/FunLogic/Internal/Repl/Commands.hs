@@ -29,6 +29,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen   as PP
 import qualified Text.Printf                    as Text
 import           Text.Trifecta
 
+import qualified FunLogic.Semantics.Denotational    as Denot
 import           FunLogic.Internal.Repl.General
 import           FunLogic.Internal.Repl.Types
 
@@ -149,8 +150,8 @@ mkProperty name access parser = PropDesc name (uses access PP.pretty) readAndSet
       Failure msg -> return $ StatusErr msg
       Success mode -> StatusOK <$ (access .= mode)
 
-stepModeParser :: Parser StepMode
+stepModeParser :: Parser Denot.StepIndex
 stepModeParser = choice
-    [ StepFixed <$> natural
-    , StepUnlimited <$ symbol "inf"
+    [ Denot.StepNatural  <$> natural
+    , Denot.StepInfinity <$  symbol "inf"
     ]
