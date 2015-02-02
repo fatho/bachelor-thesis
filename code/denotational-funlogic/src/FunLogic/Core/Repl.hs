@@ -88,6 +88,7 @@ buildInitialState env cs = ReplState
   , _replCustomState  = cs
   , _replHelpText     = buildHelpDoc (env ^. replCustomCommands) (env ^. replCustomProperties)
   , _replStepMode     = StepFixed 10
+  , _replResultsPerStep = 10
   }
 
 -- | Start the REPL.

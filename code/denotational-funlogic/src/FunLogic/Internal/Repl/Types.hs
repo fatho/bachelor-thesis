@@ -31,6 +31,7 @@ module FunLogic.Internal.Repl.Types
   , replCustomState
   , replHelpText
   , replStepMode
+  , replResultsPerStep
   -- * Lenses for ReplEnv
   , replPrelude
   , replLoader
@@ -151,6 +152,8 @@ data ReplState tag
   -- ^ repl help document
   , _replStepMode    :: StepMode
   -- ^ the way how to initialize the step indices for evaluating a computation
+  , _replResultsPerStep :: Int
+  -- ^ Number of results (in sets) printed at once per step.
   }
 
 -- | Environment of the REPL, passed from outside.

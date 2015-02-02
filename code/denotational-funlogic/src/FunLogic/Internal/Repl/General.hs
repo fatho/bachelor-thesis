@@ -126,8 +126,8 @@ displaySet printResult indent results = Haskeline.outputStr "{ " >> go results w
 
   go [] = putPrefix >> Haskeline.outputStrLn "}"
   go xs = do
-    -- TODO: make the number of elements per step configurable
-    let (curBlock, rest) = splitAt 10 xs
+    nresults <- use replResultsPerStep
+    let (curBlock, rest) = splitAt nresults xs
     sequence_ $ List.intersperse (putPrefix >> Haskeline.outputStr ", ") $ map (printResult $ indent + 2) curBlock
     if null rest
       then go []
