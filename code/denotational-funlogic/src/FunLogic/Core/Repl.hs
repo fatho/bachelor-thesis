@@ -28,6 +28,7 @@ module FunLogic.Core.Repl
   , Internal.replStepMode
   , Internal.replResultsPerStep
   , Internal.replEvalStrategy
+  , Internal.replDisplayTypes
   -- * Type families
   , Internal.TagBinding
   , Internal.TagState
@@ -94,6 +95,7 @@ buildInitialState env cs = ReplState
   , _replStepMode       = Denot.StepNatural 10
   , _replResultsPerStep = 10
   , _replEvalStrategy   = BFS
+  , _replDisplayTypes   = False
   }
 
 -- | Start the REPL.
