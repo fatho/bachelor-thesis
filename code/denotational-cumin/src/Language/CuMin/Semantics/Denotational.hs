@@ -6,7 +6,7 @@
 {-# LANGUAGE RankNTypes                #-}
 module Language.CuMin.Semantics.Denotational
   ( -- * CuMin value type
-    Value (..), boolValue
+    Value (..), boolValue, prettyValue
   -- * CuMin interpreter
   , Eval, eval, Core.runEval, Core.anything
   -- * step indices
@@ -17,26 +17,26 @@ module Language.CuMin.Semantics.Denotational
   ) where
 
 import           Control.Applicative
-import           Control.Lens                       hiding (each)
+import           Control.Lens                    hiding (each)
 import           Control.Monad.Reader
-import qualified Data.List                          as List
-import qualified Data.Map                           as M
+import qualified Data.List                       as List
+import qualified Data.Map                        as M
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Unique
-import qualified System.IO.Unsafe                   as UIO
-import qualified Text.PrettyPrint.ANSI.Leijen       as PP
+import qualified System.IO.Unsafe                as UIO
+import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 
+import qualified FunLogic.Semantics.Denotational as Core
+import qualified FunLogic.Semantics.PartialOrder as PO
+import qualified FunLogic.Semantics.Search       as Search
 
-import qualified FunLogic.Semantics.Search          as Search
-import qualified FunLogic.Semantics.Denotational    as Core
-import qualified FunLogic.Semantics.PartialOrder    as PO
-
-import qualified Language.CuMin.AST                 as CuMin
+import qualified FunLogic.Core.Pretty            as FL
+import qualified Language.CuMin.AST              as CuMin
 
 -- | A CuMin value, parameterized over a non-deterministic Monad n.
 data Value n
-  = VCon CuMin.DataConName [Value n]
+  = VCon CuMin.DataConName [Value n] [CuMin.Type]
   -- ^ ADT constructor
   | VNat Integer
   -- ^ natural number
@@ -47,8 +47,8 @@ data Value n
 
 -- | Wraps a bool in a Value.
 boolValue :: Bool -> Value n
-boolValue False = VCon "False" []
-boolValue True = VCon "True" []
+boolValue False = VCon "False" [] []
+boolValue True = VCon "True" [] []
 
 instance Core.Value Value where
   naturalValue = VNat
@@ -57,11 +57,11 @@ instance Core.Value Value where
 
 -- | Equality w.r.t. to the partial order.
 instance Eq (Value n) where
-  (VNat n)    == (VNat m)    = n == m
+  (VNat n)      == (VNat m)      = n == m
   (VBot _)    == (VBot _)    = True
-  (VFun _ u1) == (VFun _ u2) = u1 == u2
-  (VCon c xs) == (VCon d ys) = c == d && xs == ys
-  _           == _           = False
+  (VFun _ u1)   == (VFun _ u2)   = u1 == u2
+  (VCon c xs _) == (VCon d ys _) = c == d && xs == ys
+  _             == _             = False
 
 -- | Partial order of values w.r.t. to definedness.
 instance PO.PartialOrd (Value n) where
@@ -70,38 +70,50 @@ instance PO.PartialOrd (Value n) where
   -- two naturals are only compatible if they're equal
   (VNat n) `leq` (VNat m) = n == m
   -- same as above
-  (VFun _ u1) `leq` (VFun _ u2) = u1 == u2
-  (VCon c xs) `leq` (VCon d ys) = c == d && and (zipWith PO.leq xs ys)
-  _           `leq`           _ = False
+  (VFun _ u1)   `leq` (VFun _ u2)   = u1 == u2
+  (VCon c xs _) `leq` (VCon d ys _) = c == d && and (zipWith PO.leq xs ys)
+  _             `leq`            _  = False
 
 -- | Arbitrary total order for Values to be used more efficiently in sets.
 instance Ord (Value n) where
-  (VNat n)    `compare` (VNat m)    = n `compare` m
-  (VBot _)    `compare` (VBot _)    = EQ
-  (VFun _ u1) `compare` (VFun _ u2) = u1 `compare` u2
-  (VCon c xs) `compare` (VCon d ys) = c `compare` d <> xs `compare`ys
-  x           `compare` y           = compare (rank x) (rank y) where
+  (VNat n)      `compare` (VNat m)      = n `compare` m
+  (VBot _)      `compare` (VBot _)      = EQ
+  (VFun _ u1)   `compare` (VFun _ u2)   = u1 `compare` u2
+  (VCon c xs _) `compare` (VCon d ys _) = c `compare` d <> xs `compare`ys
+  x             `compare` y             = compare (rank x) (rank y) where
     rank :: Value n -> Int
-    rank (VCon _ _) = 0
+    rank (VCon _ _ _) = 0
     rank (VNat _)   = 1
     rank (VFun _ _) = 2
-    rank (VBot _)   = 3
+    rank (VBot _) = 3
 
 instance PP.Pretty (Value n) where
-  pretty val@(VCon con args) = case valueToList val of
-    Nothing
-      | null args -> PP.text con
-      | otherwise -> PP.text con PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
-    Just list -> PP.prettyList list
-  pretty (VNat i)        = PP.integer i
-  pretty (VFun _ uid)    = PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
-  pretty (VBot ann)      = PP.text "\x22A5"
-    PP.<> if null ann then PP.empty else PP.enclose PP.langle PP.rangle $ PP.text ann -- "_|_"
+  pretty = prettyValue False
+
+-- | Pretty-prints a value. The bool parameter controls whether type instantiations should be displayed or not.
+prettyValue :: Bool -> Value n -> PP.Doc
+prettyValue showTypeInst val = case val of
+    VCon name args inst
+      | null args -> PP.text name PP.<> typeAnnot inst
+      | otherwise -> case valueToList val of
+          Nothing -> PP.text name PP.<> typeAnnot inst
+                        PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
+          Just list -> PP.prettyList list PP.<> typeAnnot inst
+    VNat i -> PP.integer i
+    VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
+    VBot ann -> PP.text "\x22A5" -- "_|_"
+      PP.<> cond (not $ null ann) (PP.enclose PP.langle PP.rangle $ PP.text ann)
+  where
+    cond c doc = if c then doc else PP.empty
+    typeAnnot [] = PP.empty
+    typeAnnot xs
+      | not (null xs) && showTypeInst = PP.encloseSep (PP.text "<:") (PP.text ":>") PP.comma (map FL.prettyType xs)
+      | otherwise = PP.empty
 
 -- | If the value is actually a list, return this list
 valueToList :: Value n -> Maybe [Value n]
-valueToList (VCon "Nil" []) = Just []
-valueToList (VCon "Cons" [x,xs]) = (x:) <$> valueToList xs
+valueToList (VCon "Nil" [] _) = Just []
+valueToList (VCon "Cons" [x,xs] _) = (x:) <$> valueToList xs
 valueToList _ = Nothing
 
 type EvalEnv = Core.EvalEnv CuMin.Binding Value
@@ -134,10 +146,10 @@ eval (CuMin.EFun fun tyargs) = do
       let mkLam name rst vars = return $ mkFun $ \val -> rst (M.insert name val vars)
           mkEval vars = runReaderT (Core.decrementStep $ Core.bindVars vars $ Core.bindTyVars tyEnv $ eval body) curEnv
       lift $ foldr mkLam mkEval args M.empty
-eval (CuMin.ECon con _) = do
+eval (CuMin.ECon con tyargs) = do
   (CuMin.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   let mkLam _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
-      mkCon _     dxs = VCon con (dxs [])
+      mkCon _     dxs = VCon con (dxs []) tyargs
   return $ CuMin.foldFunctionType mkLam mkCon rawType id
 
 -- the following cases need fair choice:
@@ -169,7 +181,7 @@ patternMatch :: (Core.NonDeterministic n) => Value n -> [CuMin.Alt] -> Eval n (V
 patternMatch (VBot x)   _ = return $ VBot x
 patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
-patternMatch con@(VCon cname args) alts = case List.find (matches cname) alts of
+patternMatch con@(VCon cname args _) alts = case List.find (matches cname) alts of
   Nothing -> return $ VBot "incomplete pattern match"
   -- catch all pattern: bind scrutinee to name
   Just (CuMin.Alt (CuMin.PVar v) body) -> Core.bindVar v con $ eval body

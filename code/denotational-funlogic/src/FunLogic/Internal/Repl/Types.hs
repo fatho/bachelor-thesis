@@ -36,6 +36,7 @@ module FunLogic.Internal.Repl.Types
   , replStepMode
   , replResultsPerStep
   , replEvalStrategy
+  , replDisplayTypes
   -- * Lenses for ReplEnv
   , replPrelude
   , replLoader
@@ -153,6 +154,9 @@ data ReplState tag
   , _replResultsPerStep :: Int
   -- ^ Number of results (in sets) printed at once per step.
   , _replEvalStrategy   :: Strategy
+  -- ^ The evaluation strategy to use for the denotational semantics.
+  , _replDisplayTypes   :: Bool
+  -- ^ Controls whether constructors should be displayed with type annotations or not.
   }
 
 -- | Environment of the REPL, passed from outside.

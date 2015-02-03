@@ -145,7 +145,12 @@ builtinProperties =
         (PP.text "The number of results in a set to be displayed at once.")
     , mkProperty "strategy" replEvalStrategy (parseAbbrev show [BFS, DFS])
         (PP.text "The evaluation strategy, either breadth-first (BFS) or depth-first (DFS).")
+    , mkProperty "showtypes" replDisplayTypes (parseAbbrev yesNo [False, True])
+        (PP.text "If value is 'yes', constructors are displayed with the corresponding type annotations.")
     ]
+    where
+      yesNo True = "yes"
+      yesNo False = "no"
 
 -- | Creates a property description from a lens into the 'ReplState' and a parser.
 mkProperty :: (MonadState (ReplState tag) m, Functor m, PP.Pretty a)

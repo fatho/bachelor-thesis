@@ -142,4 +142,6 @@ main = do
 
 -- | Incremental output of results.
 displayResults :: [Denot.Value n] -> Repl.ReplInputM CuMinRepl ()
-displayResults = Repl.displaySet (const $ Repl.putDocLn . PP.pretty) 0
+displayResults vals = do
+  showTypeInst <- use Repl.replDisplayTypes
+  Repl.displaySet (const $ Repl.putDocLn . Denot.prettyValue showTypeInst) 0 vals

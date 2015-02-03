@@ -149,7 +149,9 @@ main = do
 displayValue :: (Search.Observable n) => Int -> Denot.Value n -> Repl.ReplInputM SaLTRepl ()
 displayValue indent val = case val of
   Denot.VSet vset _ -> displayValueSet indent (Search.observeAll vset)
-  other -> Repl.putDocLn $ PP.pretty other
+  other -> do
+    showTypeInst <- use Repl.replDisplayTypes
+    Repl.putDocLn $ Denot.prettyValue showTypeInst other
 
 -- | Incremental output of results.
 displayValueSet :: (Search.Observable n) => Int -> [Denot.Value n] -> Repl.ReplInputM SaLTRepl ()

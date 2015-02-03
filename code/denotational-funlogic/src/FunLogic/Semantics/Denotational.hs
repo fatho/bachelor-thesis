@@ -52,8 +52,8 @@ class Value (v :: (* -> *) -> *) where
   naturalValue :: Integer -> v n
   -- | Bottom value _|_ with an optional message why the bottom value occured.
   bottomValue  :: String -> v n
-  -- | Creates an ADT value with the given constructor name and arguments.
-  dataValue    :: FL.DataConName -> [v n] -> v n
+  -- | Creates an ADT value with the given constructor name, arguments and type instantiations.
+  dataValue    :: FL.DataConName -> [v n] -> [FL.Type] -> v n
 
 -- | Infinity data type used for indefinite recursions in the interpreter.
 data Infinity = Infinity deriving (Eq, Ord, Enum, Bounded, Show, Read)
@@ -78,8 +78,8 @@ isZero (StepNatural 0) = True
 isZero _               = False
 
 instance PP.Pretty StepIndex where
-  pretty (StepNatural n)   = PP.integer n
-  pretty (StepInfinity) = PP.text "infinity"
+  pretty (StepNatural n) = PP.integer n
+  pretty (StepInfinity)  = PP.text "infinity"
 
 -- | Environment needed during evaluation
 data EvalEnv bnd val nd
@@ -137,15 +137,15 @@ anything (FL.TCon tycon args) = view stepIdx >>= \case
       -- { _|_ } `union` 1st constr. `union` 2nd constr. `union` ...
       -- fair choice out of many constructor alternatives
       return (bottomValue "anything")  `mplus`
-        Search.branchMany [ anyConstructor subst constr | constr <- adt ^. FL.adtConstr ]
+        Search.branchMany [ anyConstructor args subst constr | constr <- adt ^. FL.adtConstr ]
 
 -- | Generates all inhabitants of the given constructor.
-anyConstructor :: (EvalContext bnd val n) => M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
-anyConstructor subst (FL.ConDecl name args) = do
+anyConstructor :: (EvalContext bnd val n) => [FL.Type] -> M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
+anyConstructor ty subst (FL.ConDecl name args) = do
   let instantiateTyVars = applyTySubst $ \tv -> fromMaybe (FL.TVar tv) (subst^.at tv)
   -- evaluates all constructor arguments in an interleaved fashion
   anyargs <- Search.mapFairM (decrementStep . anything . instantiateTyVars) args
-  return $ dataValue name anyargs
+  return $ dataValue name anyargs ty
 
 -- | Generate naturals up to 'stepIdx' bits.
 anyNatural :: (NonDeterministic n) => Eval bnd val n Integer

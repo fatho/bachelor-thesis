@@ -10,7 +10,7 @@
 {-# LANGUAGE TemplateHaskell           #-}
 module Language.SaLT.Semantics.Denotational
   ( -- * SaLT value type
-    Value (..), boolValue
+    Value (..), boolValue, prettyValue
   -- * SaLT interpreter
   , EvalExp, eval, runEval, unknown, mapValueSet
   -- * step indices
@@ -35,11 +35,12 @@ import qualified FunLogic.Semantics.Denotational as Core
 import qualified FunLogic.Semantics.PartialOrder as PO
 import qualified FunLogic.Semantics.Search       as Search
 
+import qualified FunLogic.Core.Pretty            as FL
 import qualified Language.SaLT.AST               as SaLT
 
 -- | A SaLT value, parameterized over a non-deterministic Monad n.
 data Value n
-  = VCon SaLT.DataConName [Value n]
+  = VCon SaLT.DataConName [Value n] [SaLT.Type]
   -- ^ ADT constructor
   | VNat Integer
   -- ^ natural number
@@ -54,16 +55,16 @@ makePrisms ''Value
 
 -- | Transforms the underlying set of the value. Transformations are needed in both directions because of VFun.
 mapValueSet :: (Functor m, Functor n) => (forall a. m a -> n a) -> (forall a. n a -> m a) -> Value n -> Value m
-mapValueSet g f (VCon c xs)  = VCon c (map (mapValueSet g f) xs)
-mapValueSet g f (VFun fun u) = VFun (mapValueSet g f . fun . mapValueSet f g) u
-mapValueSet g f (VSet vs u)  = VSet (mapValueSet g f <$> f vs) u
-mapValueSet _ _ (VNat n)     = VNat n
-mapValueSet _ _ (VBot msg)   = VBot msg
+mapValueSet g f (VCon c xs ty) = VCon c (map (mapValueSet g f) xs) ty
+mapValueSet g f (VFun fun u)   = VFun (mapValueSet g f . fun . mapValueSet f g) u
+mapValueSet g f (VSet vs u)    = VSet (mapValueSet g f <$> f vs) u
+mapValueSet _ _ (VNat n)       = VNat n
+mapValueSet _ _ (VBot msg)     = VBot msg
 
 -- | Wraps a bool in a Value.
 boolValue :: Bool -> Value n
-boolValue False = VCon "False" []
-boolValue True = VCon "True" []
+boolValue False = VCon "False" [] []
+boolValue True = VCon "True" [] []
 
 instance Core.Value Value where
   naturalValue = VNat
@@ -75,7 +76,7 @@ instance Eq (Value n) where
   (VNat n)    == (VNat m)    = n == m
   (VBot _)    == (VBot _)    = True
   (VFun _ u1) == (VFun _ u2) = u1 == u2
-  (VCon c xs) == (VCon d ys) = c == d && xs == ys
+  (VCon c xs _) == (VCon d ys _) = c == d && xs == ys
   _           == _           = False
 
 -- | Partial order of values w.r.t. to definedness.
@@ -85,42 +86,54 @@ instance PO.PartialOrd (Value n) where
   -- two naturals are only compatible if they're equal
   (VNat n) `leq` (VNat m) = n == m
   -- same as above
-  (VFun _ u1) `leq` (VFun _ u2) = u1 == u2
-  (VSet _ u1) `leq` (VSet _ u2) = u1 == u2
-  (VCon c xs) `leq` (VCon d ys) = c == d && and (zipWith PO.leq xs ys)
-  _           `leq`           _ = False
+  (VFun _ u1)   `leq` (VFun _ u2)   = u1 == u2
+  (VSet _ u1)   `leq` (VSet _ u2)   = u1 == u2
+  (VCon c xs _) `leq` (VCon d ys _) = c == d && and (zipWith PO.leq xs ys)
+  _             `leq`           _   = False
 
 -- | Arbitrary total order for Values to be used more efficiently in sets.
 instance Ord (Value n) where
-  (VNat n)    `compare` (VNat m)    = n `compare` m
-  (VBot _)    `compare` (VBot _)    = EQ
-  (VFun _ u1) `compare` (VFun _ u2) = u1 `compare` u2
-  (VCon c xs) `compare` (VCon d ys) = c `compare` d <> xs `compare`ys
-  (VSet _ u1) `compare` (VSet _ u2) = u1 `compare` u2
-  x           `compare` y           = compare (rank x) (rank y) where
+  (VNat n)      `compare` (VNat m)      = n `compare` m
+  (VBot _)      `compare` (VBot _)      = EQ
+  (VFun _ u1)   `compare` (VFun _ u2)   = u1 `compare` u2
+  (VCon c xs _) `compare` (VCon d ys _) = c `compare` d <> xs `compare`ys
+  (VSet _ u1)   `compare` (VSet _ u2)   = u1 `compare` u2
+  x             `compare` y             = compare (rank x) (rank y) where
     rank :: Value n -> Int
-    rank (VCon _ _) = 0
+    rank (VCon _ _ _) = 0
     rank (VNat _)   = 1
     rank (VFun _ _) = 2
     rank (VBot _)   = 3
     rank (VSet _ _) = 4
 
 instance PP.Pretty (Value n) where
-  pretty val@(VCon con args) = case valueToList val of
-    Nothing
-      | null args -> PP.text con
-      | otherwise -> PP.text con PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
-    Just list -> PP.prettyList list
-  pretty (VNat i)        = PP.integer i
-  pretty (VFun _ uid)    = PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
-  pretty (VBot ann)      = PP.text "\x22A5"
-    PP.<> if null ann then PP.empty else PP.enclose PP.langle PP.rangle $ PP.text ann -- "_|_"
-  pretty (VSet _ uid)    = PP.text "<set:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
+  pretty = prettyValue False
+
+-- | Pretty-prints a value. The bool parameter controls whether type instantiations should be displayed or not.
+prettyValue :: Bool -> Value n -> PP.Doc
+prettyValue showTypeInst val = case val of
+    VCon name args inst
+      | null args -> PP.text name PP.<> typeAnnot inst
+      | otherwise -> case valueToList val of
+          Nothing -> PP.text name PP.<> typeAnnot inst
+                        PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
+          Just list -> PP.prettyList list PP.<> typeAnnot inst
+    VNat i -> PP.integer i
+    VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
+    VSet _ uid -> PP.text "<set:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
+    VBot ann -> PP.text "\x22A5" -- "_|_"
+       PP.<> cond (not $ null ann) (PP.enclose PP.langle PP.rangle $ PP.text ann)
+  where
+    cond c doc = if c then doc else PP.empty
+    typeAnnot [] = PP.empty
+    typeAnnot xs
+      | not (null xs) && showTypeInst = PP.encloseSep (PP.text "<:") (PP.text ":>") PP.comma (map FL.prettyType xs)
+      | otherwise = PP.empty
 
 -- | If the value is acutally a list, return this list
 valueToList :: Value n -> Maybe [Value n]
-valueToList (VCon "Nil" []) = Just []
-valueToList (VCon "Cons" [x,xs]) = (x:) <$> valueToList xs
+valueToList (VCon "Nil" [] _) = Just []
+valueToList (VCon "Cons" [x,xs] _) = (x:) <$> valueToList xs
 valueToList _ = Nothing
 
 type EvalEnv = Core.EvalEnv SaLT.Binding Value
@@ -176,10 +189,10 @@ eval (SaLT.EFun fun tyargs) = do
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
       -- evaluate body
       Core.decrementStep $ Core.bindTyVars tyEnv $ eval body
-eval (SaLT.ECon con _) = do
+eval (SaLT.ECon con tys) = do
   (SaLT.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   let f _ rst dxs = mkFun $ \x -> rst (dxs . (x:))
-      g _     dxs = VCon con (dxs [])
+      g _     dxs = VCon con (dxs []) tys
   return $ SaLT.foldFunctionType f g rawType id
 eval (SaLT.ELam argName _ body) = do
   curEnv <- ask
@@ -204,7 +217,7 @@ patternMatch (VBot x)   _ = return $ VBot x
 patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
 patternMatch (VSet _ _) _ = error "cannot pattern match on sets"
-patternMatch con@(VCon cname args) alts = case List.find (matches cname) alts of
+patternMatch con@(VCon cname args _) alts = case List.find (matches cname) alts of
   Nothing -> error "incomplete pattern match"
   -- catch all pattern: bind scrutinee to name
   Just (SaLT.Alt (SaLT.PVar v) body) -> Core.bindVar v con $ eval body
