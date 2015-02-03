@@ -51,7 +51,6 @@ executable cumint
                      , haskeline            ==0.7.*
                      , either               ==4.3.*
                      , logict               ==0.6.*
-                     , control-monad-omega  ==0.3.*
                      , data-default-class
                      , language-cumin
                      , funlogic-core
