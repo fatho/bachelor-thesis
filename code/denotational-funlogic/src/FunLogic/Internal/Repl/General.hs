@@ -32,6 +32,7 @@ import           Data.Monoid
 import qualified System.Console.Haskeline     as Haskeline
 import qualified System.Console.Terminal.Size as Terminal
 import qualified System.IO                    as IO
+import qualified System.IO.Error              as IO
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import           Text.Trifecta
 
@@ -62,13 +63,17 @@ loadModule :: (MonadRepl tag m) => FilePath -> m ()
 loadModule filePath = do
   liftIO $ PP.putDoc $ PP.text "Loading " PP.<+> PP.dullyellow (PP.text filePath) PP.<+> PP.text "..."
   loader <- view replLoader
-  liftIO (loader filePath) >>= \case
-    Left msg -> putDocLn $ PP.red (PP.text "Error loading") PP.<+> PP.text filePath PP.</> msg
+  liftIO (filePath `loadWith` loader) >>= \case
+    Left msg -> do
+        putDocLn $ PP.red (PP.text "ERROR:")
+        putDocLn $ PP.indent 2 msg
     Right modul -> mergeModule modul >>= \case
       StatusErr msg -> liftIO (putStrLn "") >> putDocLn msg
       StatusOK -> do
         putDocLn $ PP.dullgreen $ PP.text "Success!"
         replFiles %= List.union [filePath]
+  where
+    loadWith path loader =  IO.catchIOError (loader path) $ \e -> return $ Left $ PP.text $ show e
 
 -- | Reload all modules.
 reloadModules :: (MonadRepl tag m) => m ()
