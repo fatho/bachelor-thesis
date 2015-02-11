@@ -44,10 +44,15 @@ library
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall
+  ghc-prof-options:    -O2
+                       -fprof-auto
 
 test-suite denotational-funlogic-test
   type:                exitcode-stdio-1.0
   ghc-options:         -Wall
+  ghc-prof-options:    -O2
+                       -fprof-auto
+                       "-with-rtsopts=-p -s"
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       FunLogic.Semantics.DenotationalSpec
