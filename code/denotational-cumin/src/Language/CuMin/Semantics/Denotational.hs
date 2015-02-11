@@ -9,6 +9,7 @@ module Language.CuMin.Semantics.Denotational
     Value (..), boolValue, prettyValue
   -- * CuMin interpreter
   , Eval, eval, Core.runEval, Core.anything
+  , prune, pruneN
   -- * step indices
   , Core.Infinity (..)
   , Core.StepIndex (..)
@@ -29,6 +30,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 
 import qualified FunLogic.Semantics.Denotational as Core
 import qualified FunLogic.Semantics.PartialOrder as PO
+import qualified FunLogic.Semantics.Pruning      as Pruning
 import qualified FunLogic.Semantics.Search       as Search
 
 import qualified FunLogic.Core.Pretty            as FL
@@ -44,6 +46,14 @@ data Value n
   -- ^ function
   | VBot String
   -- ^ bottom with an annotation, which is ignored during computation but displayed in the result
+
+-- | Returns true when it makes no sense to include the value in the pruning mechanism.
+-- Namely, function values cannot sensibly be compared to others, so they are always considered maximql,
+-- same thing for naturals.
+notPrunable :: Value n -> Bool
+notPrunable VCon {} = False
+notPrunable VBot {} = False
+notPrunable _       = True
 
 -- | Wraps a bool in a Value.
 boolValue :: Bool -> Value n
@@ -82,10 +92,10 @@ instance Ord (Value n) where
   (VCon c xs _) `compare` (VCon d ys _) = c `compare` d <> xs `compare`ys
   x             `compare` y             = compare (rank x) (rank y) where
     rank :: Value n -> Int
-    rank (VCon _ _ _) = 0
+    rank (VCon {})  = 0
     rank (VNat _)   = 1
     rank (VFun _ _) = 2
-    rank (VBot _) = 3
+    rank (VBot _)   = 3
 
 instance PP.Pretty (Value n) where
   pretty = prettyValue False
@@ -121,6 +131,14 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval n = ReaderT (EvalEnv n) n
 
+-- | Allaws pruning of CuMin values.
+prune :: (Search.MonadSearch n) => Eval n (Value n) -> Eval n (Value n)
+prune = Pruning.pruneNonMaximal notPrunable
+
+-- | Allaws pruning of CuMin values. Only considers the last N maximal elements.
+pruneN :: (Search.MonadSearch n) => Int -> Eval n (Value n) -> Eval n (Value n)
+pruneN n = Pruning.pruneNonMaximalN n notPrunable
+
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
@@ -143,14 +161,14 @@ eval (CuMin.EFun fun tyargs) = do
       -- construct type environment for function evaluation
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
       -- build nested lambda expression
-      let mkLam name rst vars = return $ mkFun $ \val -> rst (M.insert name val vars)
-          mkEval vars = runReaderT (Core.decrementStep $ Core.bindVars vars $ Core.bindTyVars tyEnv $ eval body) curEnv
-      lift $ foldr mkLam mkEval args M.empty
+      let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
+          mkEval vars = runReaderT (Core.decrementStep $! Core.bindVars vars $! Core.bindTyVars tyEnv $! eval body) curEnv
+      lift $! List.foldr mkLam mkEval args M.empty
 eval (CuMin.ECon con tyargs) = do
   (CuMin.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   let mkLam _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
       mkCon _     dxs = VCon con (dxs []) tyargs
-  return $ CuMin.foldFunctionType mkLam mkCon rawType id
+  return $! CuMin.foldFunctionType mkLam mkCon rawType id
 
 -- the following cases need fair choice:
 ------------------------------------------------------

@@ -107,7 +107,7 @@ doEvaluate expr = Repl.alwaysContinue $
       interactiveMod <- use Repl.replModule
       strategy       <- use Repl.replEvalStrategy
       stepIndex      <- use Repl.replStepMode
-      case evalWithStrategy strategy (Denot.eval expr) interactiveMod stepIndex of
+      case evalWithStrategy strategy (Denot.prune $ Denot.eval expr) interactiveMod stepIndex of
         ObservableSet resultSet -> displayResults $ Search.observeAll resultSet
 
 -- | CuMin specific REPL commands.
