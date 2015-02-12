@@ -9,7 +9,6 @@ module Language.CuMin.Semantics.Denotational
     Value (..), boolValue, prettyValue
   -- * CuMin interpreter
   , Eval, eval, Core.runEval, Core.anything
-  , prune, pruneN
   -- * step indices
   , Core.Infinity (..)
   , Core.StepIndex (..)
@@ -46,14 +45,6 @@ data Value n
   -- ^ function
   | VBot String
   -- ^ bottom with an annotation, which is ignored during computation but displayed in the result
-
--- | Returns true when it makes no sense to include the value in the pruning mechanism.
--- Namely, function values cannot sensibly be compared to others, so they are always considered maximql,
--- same thing for naturals.
-notPrunable :: Value n -> Bool
-notPrunable VCon {} = False
-notPrunable VBot {} = False
-notPrunable _       = True
 
 -- | Wraps a bool in a Value.
 boolValue :: Bool -> Value n
@@ -131,14 +122,6 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval n = ReaderT (EvalEnv n) n
 
--- | Allaws pruning of CuMin values.
-prune :: (Search.MonadSearch n) => Eval n (Value n) -> Eval n (Value n)
-prune = Pruning.pruneNonMaximal notPrunable
-
--- | Allaws pruning of CuMin values. Only considers the last N maximal elements.
-pruneN :: (Search.MonadSearch n) => Int -> Eval n (Value n) -> Eval n (Value n)
-pruneN n = Pruning.pruneNonMaximalN n notPrunable
-
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
@@ -173,21 +156,21 @@ eval (CuMin.ECon con tyargs) = do
 -- the following cases need fair choice:
 ------------------------------------------------------
 -- let (free) needs a fair choice of the bound value
-eval (CuMin.ELet var bnd body) = eval bnd Search.>>? \val -> Core.bindVar var val (eval body)
-eval (CuMin.ELetFree var ty body) = Core.anything ty Search.>>? \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELet var bnd body) = Pruning.pruneNonMaximal $ eval bnd Search.>>? \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELetFree var ty body) = Pruning.pruneNonMaximal $ Core.anything ty Search.>>? \val -> Core.bindVar var val (eval body)
 -- fair choice of caller and argument
-eval (CuMin.EApp funE argE) =
+eval (CuMin.EApp funE argE) = Pruning.pruneNonMaximal $
   Search.fairBind2 primApp (eval funE) (eval argE)
 -- fair choice of prim arguments
-eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) =
+eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) = Pruning.pruneNonMaximal $
   Search.liftFairM2 primEq (eval ex) (eval ey)
-eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) =
+eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) = Pruning.pruneNonMaximal $
   Search.liftFairM2 primAdd (eval ex) (eval ey)
 -- REMARK: Add future prim-ops to evaluator at this point
 eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
 -- fair choice of scrutinee
-eval (CuMin.ECase scrut alts) = eval scrut
-  Search.>>? \scrutVal -> patternMatch scrutVal alts
+eval (CuMin.ECase scrut alts) = Pruning.pruneNonMaximal $
+  eval scrut Search.>>? \scrutVal -> patternMatch scrutVal alts
 
 -- | Creates a new function value with a unique ID.
 -- Uses unsafePerformIO internally.
