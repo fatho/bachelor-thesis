@@ -18,7 +18,9 @@ import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
 import qualified Data.Set                             as Set
+import           System.CPUTime                       (getCPUTime)
 import qualified Text.PrettyPrint.ANSI.Leijen         as PP
+import           Text.Printf                          (printf)
 import           Text.Trifecta
 
 import qualified FunLogic.Core.Repl                   as Repl
@@ -112,8 +114,12 @@ doEvaluate expr = Repl.alwaysContinue $
       interactiveMod <- use Repl.replModule
       strategy       <- use Repl.replEvalStrategy
       stepIndex      <- use Repl.replStepMode
+      startTime      <- liftIO getCPUTime
       case evalWithStrategy strategy (Denot.eval expr) interactiveMod stepIndex of
         ObservableValue result -> displayValue 0 result
+      endTime        <- liftIO getCPUTime
+      let elapsed = realToFrac (endTime - startTime) / 1000000000000 :: Double
+      Repl.putDocLn $ PP.text "CPU time elapsed:" PP.<+> PP.dullyellow (PP.text $ printf "%.3f s" elapsed)
 
 -- | SaLT specific REPL commands.
 saltReplCommands :: [Repl.CommandDesc SaLTRepl]
