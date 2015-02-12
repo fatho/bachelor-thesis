@@ -123,7 +123,7 @@ prettyValue showTypeInst val = case val of
     VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
     VSet _ uid -> PP.text "<set:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
     VBot ann -> PP.text "\x22A5" -- "_|_"
-       PP.<> cond (not $ null ann) (PP.enclose PP.langle PP.rangle $ PP.text ann)
+      PP.<> cond (showTypeInst && not (null ann)) (PP.enclose PP.langle PP.rangle $ PP.text ann)
   where
     cond c doc = if c then doc else PP.empty
     typeAnnot [] = PP.empty
