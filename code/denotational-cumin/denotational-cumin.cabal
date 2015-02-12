@@ -16,10 +16,10 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:    Language.CuMin.Semantics.Denotational
-  ghc-options:        -Wall
-  ghc-prof-options:   -O2
-                      -fprof-auto
+  exposed-modules:     Language.CuMin.Semantics.Denotational
+  ghc-options:         -Wall
+  ghc-prof-options:    -O2
+                       -fprof-auto
   -- other-modules:       
   -- other-extensions:
   build-depends:       base                 ==4.7.*
