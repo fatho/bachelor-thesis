@@ -33,6 +33,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 
 import qualified FunLogic.Semantics.Denotational as Core
 import qualified FunLogic.Semantics.PartialOrder as PO
+import qualified FunLogic.Semantics.Pruning      as Pruning
 import qualified FunLogic.Semantics.Search       as Search
 
 import qualified FunLogic.Core.Pretty            as FL
@@ -242,7 +243,7 @@ primOp SaLT.PrimBind = primBind
 
 -- | Primitve monadic bind on sets. Uses fair conjunction.
 primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
-primBind (VSet vs _) (VFun f _) = mkSet $ vs Search.>>? \val -> case f val of
+primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximal $ vs Search.>>? \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error: "
