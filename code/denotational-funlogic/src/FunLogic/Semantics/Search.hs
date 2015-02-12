@@ -20,20 +20,28 @@ class (Alternative m, MonadPlus m) => MonadSearch m where
   (>>?)  :: m a -> (a -> m b) -> m b
 
 instance Monad m => MonadSearch (Logic.LogicT m) where
+  {-# INLINABLE peek #-}
   peek   = Logic.msplit
+  {-# INLINABLE branch #-}
   branch = Logic.interleave
+  {-# INLINABLE (>>?) #-}
   (>>?)  = (Logic.>>-)
 
-instance MonadSearch m => MonadSearch (ReaderT s m) where
+instance MonadSearch m => MonadSearch (ReaderT r m) where
+  {-# SPECIALIZE instance MonadSearch (ReaderT r (UnFair Logic.Logic)) #-}
+  {-# SPECIALIZE instance MonadSearch (ReaderT r Logic.Logic) #-}
+  {-# INLINABLE peek #-}
   peek rm = ReaderT $ \e -> do
     r <- peek $ runReaderT rm e
     case r of
       Nothing -> return Nothing
       Just (a, m) -> return (Just (a, lift m))
 
+  {-# INLINABLE branch #-}
   branch ma mb = ReaderT $ \r ->
     runReaderT ma r `branch` runReaderT mb r
 
+  {-# INLINABLE (>>?) #-}
   ma >>? f = ReaderT $ \s ->
     runReaderT ma s >>? \a -> runReaderT (f a) s
 
@@ -70,10 +78,14 @@ instance MonadTrans UnFair where
   lift = UnFair
 
 instance (Alternative m, MonadPlus m, MonadSearch m) => MonadSearch (UnFair m) where
+  {-# SPECIALIZE instance MonadSearch (UnFair Logic.Logic) #-}
+  {-# INLINABLE peek #-}
   peek rm = UnFair $ peek (fair rm) >>= \case
     Nothing -> return Nothing
     Just (a, m) -> return (Just (a, lift m))
+  {-# INLINABLE branch #-}
   branch = mplus
+  {-# INLINABLE (>>?) #-}
   (>>?) = (>>=)
 
 instance Observable m => Observable (UnFair m) where

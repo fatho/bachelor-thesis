@@ -18,6 +18,7 @@ module Language.CuMin.Semantics.Denotational
 
 import           Control.Applicative
 import           Control.Lens                    hiding (each)
+import qualified Control.Monad.Logic             as Logic
 import           Control.Monad.Reader
 import qualified Data.List                       as List
 import qualified Data.Map                        as M
@@ -66,11 +67,13 @@ instance Eq (Value n) where
 
 -- | Partial order of values w.r.t. to definedness.
 instance PO.PartialOrd (Value n) where
-  -- _|_ is the minimal element
+  (VBot _) `lt` (VBot _) = False
+  (VBot _) `lt` _        = True
+  (VCon c xs _) `lt` (VCon d ys _) = c == d && and (zipWith PO.lt xs ys)
+  _             `lt`            _  = False
+
   (VBot _) `leq` _ = True
-  -- two naturals are only compatible if they're equal
   (VNat n) `leq` (VNat m) = n == m
-  -- same as above
   (VFun _ u1)   `leq` (VFun _ u2)   = u1 == u2
   (VCon c xs _) `leq` (VCon d ys _) = c == d && and (zipWith PO.leq xs ys)
   _             `leq`            _  = False
@@ -103,7 +106,7 @@ prettyValue showTypeInst val = case val of
     VNat i -> PP.integer i
     VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
     VBot ann -> PP.text "\x22A5" -- "_|_"
-      PP.<> cond (not $ null ann) (PP.enclose PP.langle PP.rangle $ PP.text ann)
+      PP.<> cond (showTypeInst && not (null ann)) (PP.enclose PP.langle PP.rangle $ PP.text ann)
   where
     cond c doc = if c then doc else PP.empty
     typeAnnot [] = PP.empty
@@ -121,6 +124,12 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval n = ReaderT (EvalEnv n) n
+
+-- * This specializations brought a slight performance gain, as those types are the only ones used by the REPL.
+{-# SPECIALIZE Core.anything :: CuMin.Type -> Eval Logic.Logic (Value Logic.Logic) #-}
+{-# SPECIALIZE Core.anything :: CuMin.Type -> Eval (Search.UnFair Logic.Logic) (Value (Search.UnFair Logic.Logic)) #-}
+{-# SPECIALIZE eval :: CuMin.Exp -> Eval Logic.Logic (Value Logic.Logic) #-}
+{-# SPECIALIZE eval :: CuMin.Exp -> Eval (Search.UnFair Logic.Logic) (Value (Search.UnFair Logic.Logic)) #-}
 
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment

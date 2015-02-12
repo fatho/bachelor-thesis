@@ -10,17 +10,20 @@ import qualified FunLogic.Semantics.Search       as Search
 -- | Removes a value from the monadic computation, if a larger value has already been returned.
 -- This function allows to except some values from the maximality check.
 pruneNonMaximal :: (PO.PartialOrd a, Search.MonadSearch m) => m a -> m a
+{-# INLINABLE pruneNonMaximal #-}
 pruneNonMaximal = pruneNonMaximal' id
 
 -- | Removes a value from the monadic computation, if a larger value has already been returned.
 -- Only the 'N' most recent maximal values are considered.
 pruneNonMaximalN :: (PO.PartialOrd a, Search.MonadSearch m) => Int -> m a -> m a
+{-# INLINABLE pruneNonMaximalN #-}
 pruneNonMaximalN n = pruneNonMaximal' (take n)
 
 -- | Removes a value from the monadic computation, if a larger value has already been returned.
 -- This functions allows to transform the internal representation of the list of maximal elements
 -- and to always return elements matching a specific predicate.
 pruneNonMaximal' :: (PO.PartialOrd a, Search.MonadSearch m) => ([a] -> [a]) -> m a -> m a
+{-# INLINABLE pruneNonMaximal' #-}
 pruneNonMaximal' process = go [] where
   -- | Maintains a list of maximal elements encountered so far. It maintains the invariant, that each element in this
   -- list is incomparable to every other element.

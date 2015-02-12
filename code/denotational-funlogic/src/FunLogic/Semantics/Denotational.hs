@@ -26,13 +26,12 @@ module FunLogic.Semantics.Denotational
   -- * Interpreter Interface
   , runEval
   , decrementStep
-  , each
   , anything, anyConstructor, anyNatural
   , bindVar, bindVars, bindTyVars
   ) where
 
 import           Control.Applicative
-import           Control.Lens                       hiding (each)
+import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Reader
 import qualified Data.Map                           as M
@@ -114,10 +113,6 @@ runEval action context stepMax = runReaderT action env where
 decrementStep :: (MonadReader (EvalEnv bnd val n) m) => m a -> m a
 decrementStep = local (stepIdx %~ decrement)
 
--- | Converts list to an arbitrary non-determiniTstic monad.
-each :: NonDeterministic m => [a] -> m a
-each = foldr (mplus . return) mzero
-
 -- | Applies variable substitution to a type
 applyTySubst :: (FL.TVName -> FL.Type) -> FL.Type -> FL.Type
 applyTySubst f (FL.TVar tv) = f tv
@@ -125,6 +120,7 @@ applyTySubst f (FL.TCon n xs) = FL.TCon n $ map (applyTySubst f) xs
 
 -- | Generates all possible inhabitants of the given type up to the step index provided by the environment.
 anything :: (EvalContext bnd val n) => FL.Type -> Eval bnd val n (val n)
+{-# INLINABLE anything #-}
 anything (FL.TVar tv) = view (typeEnv.at tv) >>= lift . fromMaybe (error "free type variable")
 anything (FL.TFun _ _) = error "free variables cannot have a function type"
 anything (FL.TNat) = fmap naturalValue anyNatural
@@ -141,6 +137,7 @@ anything (FL.TCon tycon args) = view stepIdx >>= \case
 
 -- | Generates all inhabitants of the given constructor.
 anyConstructor :: (EvalContext bnd val n) => [FL.Type] -> M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
+{-# INLINABLE anyConstructor #-}
 anyConstructor ty subst (FL.ConDecl name args) = do
   let instantiateTyVars = applyTySubst $ \tv -> fromMaybe (FL.TVar tv) (subst^.at tv)
   -- evaluates all constructor arguments in an interleaved fashion
@@ -149,6 +146,7 @@ anyConstructor ty subst (FL.ConDecl name args) = do
 
 -- | Generate naturals up to 'stepIdx' bits.
 anyNatural :: (NonDeterministic n) => Eval bnd val n Integer
+{-# INLINABLE anyNatural #-}
 anyNatural = pure 0 <|> go 1 where
   go n = view stepIdx >>= \idx -> do
     guard (not $ isZero idx)
