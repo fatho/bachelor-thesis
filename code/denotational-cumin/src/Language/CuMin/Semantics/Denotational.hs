@@ -60,20 +60,15 @@ instance Core.Value Value where
 -- | Equality w.r.t. to the partial order.
 instance Eq (Value n) where
   (VNat n)      == (VNat m)      = n == m
-  (VBot _)    == (VBot _)    = True
+  (VBot _)      == (VBot _)      = True
   (VFun _ u1)   == (VFun _ u2)   = u1 == u2
   (VCon c xs _) == (VCon d ys _) = c == d && xs == ys
   _             == _             = False
 
 -- | Partial order of values w.r.t. to definedness.
 instance PO.PartialOrd (Value n) where
-  (VBot _) `lt` (VBot _) = False
-  (VBot _) `lt` _        = True
-  (VCon c xs _) `lt` (VCon d ys _) = c == d && and (zipWith PO.lt xs ys)
-  _             `lt`            _  = False
-
-  (VBot _) `leq` _ = True
-  (VNat n) `leq` (VNat m) = n == m
+  (VBot _)      `leq` _             = True
+  (VNat n)      `leq` (VNat m)      = n == m
   (VFun _ u1)   `leq` (VFun _ u2)   = u1 == u2
   (VCon c xs _) `leq` (VCon d ys _) = c == d && and (zipWith PO.leq xs ys)
   _             `leq`            _  = False
@@ -94,6 +89,9 @@ instance Ord (Value n) where
 instance PP.Pretty (Value n) where
   pretty = prettyValue False
 
+instance Show (Value n) where
+  show = show . PP.plain . prettyValue False
+
 -- | Pretty-prints a value. The bool parameter controls whether type instantiations should be displayed or not.
 prettyValue :: Bool -> Value n -> PP.Doc
 prettyValue showTypeInst val = case val of
@@ -105,7 +103,7 @@ prettyValue showTypeInst val = case val of
           Just list -> PP.prettyList list PP.<> typeAnnot inst
     VNat i -> PP.integer i
     VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
-    VBot ann -> PP.text "\x22A5" -- "_|_"
+    VBot ann -> PP.text "_|_" -- "_|_" \x22A5
       PP.<> cond (showTypeInst && not (null ann)) (PP.enclose PP.langle PP.rangle $ PP.text ann)
   where
     cond c doc = if c then doc else PP.empty
@@ -124,6 +122,9 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval n = ReaderT (EvalEnv n) n
+
+prune :: (Search.MonadSearch n, PO.PartialOrd a) => Eval n a -> Eval n a
+prune = Pruning.pruneNonMaximalN 10
 
 -- * This specializations brought a slight performance gain, as those types are the only ones used by the REPL.
 {-# SPECIALIZE Core.anything :: CuMin.Type -> Eval Logic.Logic (Value Logic.Logic) #-}
@@ -147,7 +148,7 @@ eval (CuMin.EFun fun tyargs) = do
     else do
       -- find function binding
       (CuMin.Binding _ args body (CuMin.TyDecl tyvars _ _) _)
-        <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to fromJust
+        <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to (fromMaybe $ error $ "function " ++ fun ++ " does not exist")
       -- extract environment use inside of the function value
       curEnv <- ask
       -- construct type environment for function evaluation
@@ -165,20 +166,20 @@ eval (CuMin.ECon con tyargs) = do
 -- the following cases need fair choice:
 ------------------------------------------------------
 -- let (free) needs a fair choice of the bound value
-eval (CuMin.ELet var bnd body) = Pruning.pruneNonMaximal $ eval bnd Search.>>? \val -> Core.bindVar var val (eval body)
-eval (CuMin.ELetFree var ty body) = Pruning.pruneNonMaximal $ Core.anything ty Search.>>? \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELet var bnd body) = prune $ eval bnd Search.>>? \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELetFree var ty body) = prune $ Core.anything ty Search.>>? \val -> Core.bindVar var val (eval body)
 -- fair choice of caller and argument
-eval (CuMin.EApp funE argE) = Pruning.pruneNonMaximal $
+eval (CuMin.EApp funE argE) = prune $
   Search.fairBind2 primApp (eval funE) (eval argE)
 -- fair choice of prim arguments
-eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) = Pruning.pruneNonMaximal $
+eval (CuMin.EPrim CuMin.PrimEq [ex,ey]) = prune $
   Search.liftFairM2 primEq (eval ex) (eval ey)
-eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) = Pruning.pruneNonMaximal $
+eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) = prune $
   Search.liftFairM2 primAdd (eval ex) (eval ey)
 -- REMARK: Add future prim-ops to evaluator at this point
 eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
 -- fair choice of scrutinee
-eval (CuMin.ECase scrut alts) = Pruning.pruneNonMaximal $
+eval (CuMin.ECase scrut alts) = prune $
   eval scrut Search.>>? \scrutVal -> patternMatch scrutVal alts
 
 -- | Creates a new function value with a unique ID.
