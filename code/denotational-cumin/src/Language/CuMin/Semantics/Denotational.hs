@@ -124,7 +124,7 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 type Eval n = ReaderT (EvalEnv n) n
 
 prune :: (Search.MonadSearch n, PO.PartialOrd a) => Eval n a -> Eval n a
-prune = Pruning.pruneNonMaximalN 10
+prune = Pruning.pruneNonMaximalN 20
 
 -- * This specializations brought a slight performance gain, as those types are the only ones used by the REPL.
 {-# SPECIALIZE Core.anything :: CuMin.Type -> Eval Logic.Logic (Value Logic.Logic) #-}

@@ -10,7 +10,7 @@
 {-# LANGUAGE TemplateHaskell           #-}
 module Language.SaLT.Semantics.Denotational
   ( -- * SaLT value type
-    Value (..), boolValue, prettyValue
+    Value (..), boolValue, prettyValue, mkSet
   -- * SaLT interpreter
   , EvalExp, eval, runEval, unknown, mapValueSet
   -- * step indices
@@ -109,6 +109,9 @@ instance Ord (Value n) where
 
 instance PP.Pretty (Value n) where
   pretty = prettyValue False
+
+instance Show (Value n) where
+  show = show . PP.plain . prettyValue False
 
 -- | Pretty-prints a value. The bool parameter controls whether type instantiations should be displayed or not.
 prettyValue :: Bool -> Value n -> PP.Doc
@@ -243,7 +246,7 @@ primOp SaLT.PrimBind = primBind
 
 -- | Primitve monadic bind on sets. Uses fair conjunction.
 primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
-primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximal $ vs Search.>>? \val -> case f val of
+primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Search.>>? \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error: "
