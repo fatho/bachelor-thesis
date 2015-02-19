@@ -14,7 +14,6 @@ module Language.SaLT.Semantics.Denotational
   -- * SaLT interpreter
   , EvalExp, eval, runEval, unknown, mapValueSet
   -- * step indices
-  , Core.Infinity (..)
   , Core.StepIndex (..)
   -- * further core types
   , Core.NonDeterministic

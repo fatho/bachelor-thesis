@@ -13,7 +13,6 @@ module FunLogic.Semantics.Denotational
   -- * Abstractions
     NonDeterministic
   , Value (..)
-  , Infinity (..)
   , StepIndex (..)
   , decrement, isZero
   -- * Interpreter Environment
@@ -54,9 +53,6 @@ class Value (v :: (* -> *) -> *) where
   -- | Creates an ADT value with the given constructor name, arguments and type instantiations.
   dataValue    :: FL.DataConName -> [v n] -> [FL.Type] -> v n
 
--- | Infinity data type used for indefinite recursions in the interpreter.
-data Infinity = Infinity deriving (Eq, Ord, Enum, Bounded, Show, Read)
-
 -- | The step index for the interpreter. Either a natural number which, when repeatedly decremented, eventually
 -- reaches zero; or infinity, which, when decremented, yields infinity again.
 data StepIndex
@@ -66,19 +62,20 @@ data StepIndex
   -- ^ Infinity step index.
   deriving (Show, Eq, Ord)
 
+makePrisms ''StepIndex
+
 -- | Decrements step index by one, if it's a natural number.
 decrement :: StepIndex -> StepIndex
-decrement StepInfinity    = StepInfinity
-decrement (StepNatural n) = StepNatural $ max 0 $ n - 1
+decrement = _StepNatural %~ max 0 . subtract 1
 
 -- | Checks, if the step index has reached zero.
 isZero :: StepIndex -> Bool
-isZero (StepNatural 0) = True
-isZero _               = False
+isZero = (== StepNatural 0)
 
 instance PP.Pretty StepIndex where
   pretty (StepNatural n) = PP.integer n
   pretty (StepInfinity)  = PP.text "infinity"
+
 
 -- | Environment needed during evaluation
 data EvalEnv bnd val nd

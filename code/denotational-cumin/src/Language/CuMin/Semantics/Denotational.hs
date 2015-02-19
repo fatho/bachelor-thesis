@@ -10,7 +10,6 @@ module Language.CuMin.Semantics.Denotational
   -- * CuMin interpreter
   , Eval, eval, Core.runEval, Core.anything
   -- * step indices
-  , Core.Infinity (..)
   , Core.StepIndex (..)
   -- * further core types
   , Core.NonDeterministic
