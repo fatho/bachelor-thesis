@@ -26,6 +26,7 @@
 *.run.xml
 *.txss
 /thesis/bachelor-thesis.pdf
+/thesis/build/
 
 # haskell files
 dist
