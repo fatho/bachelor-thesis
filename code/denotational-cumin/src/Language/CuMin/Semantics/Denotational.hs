@@ -165,8 +165,8 @@ eval (CuMin.ECon con tyargs) = do
 -- the following cases need fair choice:
 ------------------------------------------------------
 -- let (free) needs a fair choice of the bound value
-eval (CuMin.ELet var bnd body) = prune $ eval bnd Search.>>? \val -> Core.bindVar var val (eval body)
-eval (CuMin.ELetFree var ty body) = prune $ Core.anything ty Search.>>? \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELet var bnd body) = prune $ eval bnd Search.>>+ \val -> Core.bindVar var val (eval body)
+eval (CuMin.ELetFree var ty body) = prune $ Core.anything ty Search.>>+ \val -> Core.bindVar var val (eval body)
 -- fair choice of caller and argument
 eval (CuMin.EApp funE argE) = prune $
   Search.fairBind2 primApp (eval funE) (eval argE)
@@ -179,7 +179,7 @@ eval (CuMin.EPrim CuMin.PrimAdd [ex,ey]) = prune $
 eval (CuMin.EPrim _ _) = error "illegal primitive operation call"
 -- fair choice of scrutinee
 eval (CuMin.ECase scrut alts) = prune $
-  eval scrut Search.>>? \scrutVal -> patternMatch scrutVal alts
+  eval scrut Search.>>+ \scrutVal -> patternMatch scrutVal alts
 
 -- | Creates a new function value with a unique ID.
 -- Uses unsafePerformIO internally.
