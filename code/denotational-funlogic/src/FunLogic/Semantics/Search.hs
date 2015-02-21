@@ -17,15 +17,15 @@ class (Alternative m, MonadPlus m) => MonadSearch m where
   -- | Fair disjunction between two branches
   branch :: m a -> m a -> m a
   -- | Fair conjunction.
-  (>>?)  :: m a -> (a -> m b) -> m b
+  (>>+)  :: m a -> (a -> m b) -> m b
 
 instance Monad m => MonadSearch (Logic.LogicT m) where
   {-# INLINABLE peek #-}
   peek   = Logic.msplit
   {-# INLINABLE branch #-}
   branch = Logic.interleave
-  {-# INLINABLE (>>?) #-}
-  (>>?)  = (Logic.>>-)
+  {-# INLINABLE (>>+) #-}
+  (>>+)  = (Logic.>>-)
 
 instance MonadSearch m => MonadSearch (ReaderT r m) where
   {-# SPECIALIZE instance MonadSearch (ReaderT r (UnFair Logic.Logic)) #-}
@@ -41,9 +41,9 @@ instance MonadSearch m => MonadSearch (ReaderT r m) where
   branch ma mb = ReaderT $ \r ->
     runReaderT ma r `branch` runReaderT mb r
 
-  {-# INLINABLE (>>?) #-}
-  ma >>? f = ReaderT $ \s ->
-    runReaderT ma s >>? \a -> runReaderT (f a) s
+  {-# INLINABLE (>>+) #-}
+  ma >>+ f = ReaderT $ \s ->
+    runReaderT ma s >>+ \a -> runReaderT (f a) s
 
 
 -- | A class of non-deterministic monads with observable results.
@@ -85,8 +85,8 @@ instance (Alternative m, MonadPlus m, MonadSearch m) => MonadSearch (UnFair m) w
     Just (a, m) -> return (Just (a, lift m))
   {-# INLINABLE branch #-}
   branch = mplus
-  {-# INLINABLE (>>?) #-}
-  (>>?) = (>>=)
+  {-# INLINABLE (>>+) #-}
+  (>>+) = (>>=)
 
 instance Observable m => Observable (UnFair m) where
   observe       = observe . fair
@@ -97,7 +97,7 @@ instance Observable m => Observable (UnFair m) where
 mapFairM :: MonadSearch m => (a -> m b) -> [a] -> m [b]
 mapFairM f = go where
   go []     = return []
-  go (x:xs) = f x >>? \b -> (b:) `liftM` go xs
+  go (x:xs) = f x >>+ \b -> (b:) `liftM` go xs
 
 -- | Like 'msum', but with fair disjunction.
 branchMany :: MonadSearch m => [m a] -> m a
@@ -109,4 +109,4 @@ liftFairM2 f = fairBind2 (\a b -> return $ f a b)
 
 -- | A fair bind over two monadic values.
 fairBind2 :: MonadSearch m => (a -> b -> m c) -> m a -> m b -> m c
-fairBind2 f ma mb = ma >>? \a -> mb >>? \b -> f a b
+fairBind2 f ma mb = ma >>+ \a -> mb >>+ \b -> f a b

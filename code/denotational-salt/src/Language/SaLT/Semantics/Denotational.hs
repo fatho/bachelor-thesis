@@ -245,7 +245,7 @@ primOp SaLT.PrimBind = primBind
 
 -- | Primitve monadic bind on sets. Uses fair conjunction.
 primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
-primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Search.>>? \val -> case f val of
+primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Search.>>+ \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error: "
