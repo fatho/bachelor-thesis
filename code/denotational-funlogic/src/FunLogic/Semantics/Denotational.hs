@@ -7,6 +7,7 @@
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TypeFamilies              #-}
 module FunLogic.Semantics.Denotational
   (
@@ -35,6 +36,7 @@ import           Control.Monad
 import           Control.Monad.Reader
 import qualified Data.Map                           as M
 import           Data.Maybe
+import qualified Data.HashSet                       as HS
 import qualified Text.PrettyPrint.ANSI.Leijen       as PP
 
 import qualified FunLogic.Semantics.Search          as Search
@@ -118,27 +120,37 @@ applyTySubst f (FL.TCon n xs) = FL.TCon n $ map (applyTySubst f) xs
 -- | Generates all possible inhabitants of the given type up to the step index provided by the environment.
 anything :: (EvalContext bnd val n) => FL.Type -> Eval bnd val n (val n)
 {-# INLINABLE anything #-}
-anything (FL.TVar tv) = view (typeEnv.at tv) >>= lift . fromMaybe (error "free type variable")
-anything (FL.TFun _ _) = error "free variables cannot have a function type"
-anything (FL.TNat) = fmap naturalValue anyNatural
-anything (FL.TCon tycon args) = view stepIdx >>= \case
+anything = anything' HS.empty
+
+-- | Generates all possible inhabitants of the given type up to the step index provided by the environment.
+-- This function checks for left-recursion in algebraic data types and inserts bottom values appropriately to
+-- allow termination.
+anything' :: (EvalContext bnd val n) => HS.HashSet FL.TyConName -> FL.Type -> Eval bnd val n (val n)
+{-# INLINABLE anything' #-}
+anything' _  (FL.TVar tv)         = view (typeEnv.at tv) >>= lift . fromMaybe (error "free type variable")
+anything' _  (FL.TFun _ _)        = error "free variables cannot have a function type"
+anything' _  (FL.TNat)            = fmap naturalValue anyNatural
+anything' vs (FL.TCon tycon args) = view stepIdx >>= \case
   n | isZero n -> return $ bottomValue "anything: maximum number of steps exceeded"
     | otherwise -> do
       -- read ADT constructors and generate variable substitution
       adt <- fromMaybe (error "ADT not found") <$> view (moduleEnv . FL.modADTs . at tycon)
       let subst = M.fromList $ zip (adt ^. FL.adtTyArgs) args
+      let (con1:conRest) = adt ^. FL.adtConstr
+      let vs' = HS.insert tycon vs
       -- { _|_ } `union` 1st constr. `union` 2nd constr. `union` ...
       -- fair choice out of many constructor alternatives
-      return (bottomValue "anything")  `mplus`
-        Search.branchMany [ anyConstructor args subst constr | constr <- adt ^. FL.adtConstr ]
+      (guard (tycon `HS.member` vs) >> return (bottomValue "anything"))
+        `mplus` (anyConstructor vs' args subst con1
+            `Search.branch` Search.branchMany [ anyConstructor vs args subst constr | constr <- conRest ] )
 
 -- | Generates all inhabitants of the given constructor.
-anyConstructor :: (EvalContext bnd val n) => [FL.Type] -> M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
+anyConstructor :: (EvalContext bnd val n) => HS.HashSet FL.TyConName -> [FL.Type] -> M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
 {-# INLINABLE anyConstructor #-}
-anyConstructor ty subst (FL.ConDecl name args) = do
+anyConstructor visited ty subst (FL.ConDecl name args) = do
   let instantiateTyVars = applyTySubst $ \tv -> fromMaybe (FL.TVar tv) (subst^.at tv)
   -- evaluates all constructor arguments in an interleaved fashion
-  anyargs <- Search.mapFairM (decrementStep . anything . instantiateTyVars) args
+  anyargs <- Search.mapFairM (decrementStep . anything' visited . instantiateTyVars) args
   return $ dataValue name anyargs ty
 
 -- | Generate naturals up to 'stepIdx' bits.
