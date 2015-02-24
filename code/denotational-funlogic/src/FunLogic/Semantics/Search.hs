@@ -27,6 +27,13 @@ instance Monad m => MonadSearch (Logic.LogicT m) where
   {-# INLINABLE (>>+) #-}
   (>>+)  = (Logic.>>-)
 
+instance MonadSearch [] where
+  peek []     = [Nothing]
+  peek (x:xs) = [Just (x, xs)]
+
+  branch = mplus
+  (>>+)  = (>>=)
+
 instance MonadSearch m => MonadSearch (ReaderT r m) where
   {-# SPECIALIZE instance MonadSearch (ReaderT r (UnFair Logic.Logic)) #-}
   {-# SPECIALIZE instance MonadSearch (ReaderT r Logic.Logic) #-}
