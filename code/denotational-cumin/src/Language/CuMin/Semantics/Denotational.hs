@@ -207,11 +207,14 @@ matches cname (CuMin.Alt (CuMin.PCon pname _) _) = cname == pname
 
 -- | Primitive equality operator which is built-in for naturals.
 primEq :: Value n -> Value n -> Value n
-primEq (VNat n) (VNat m) = boolValue $ n == m
-primEq (VBot n) (VNat _) = VBot n
-primEq (VNat _) (VBot n) = VBot n
-primEq (VBot n) (VBot _) = VBot n
-primEq _ _ = error "primEq: wrong type"
+primEq x y = either VBot boolValue $ primEq' x y
+
+primEq' :: Value n -> Value n -> Either String Bool
+primEq' (VNat n) (VNat m) = Right $ n == m
+primEq' (VBot n) _        = Left n
+primEq' _        (VBot n) = Left n
+primEq' (VCon c1 xs _) (VCon c2 ys _) = (c1 == c2 && ) . and <$> zipWithM primEq' xs ys
+primEq' _ _ = error "primEq: wrong type"
 
 -- | Primitive addition which is built-in for naturals.
 primAdd :: Value n -> Value n -> Value n

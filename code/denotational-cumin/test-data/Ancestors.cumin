@@ -1,0 +1,19 @@
+data Person = Alice | Bob | Eve | Peter | Paul
+
+parent :: Person -> Person
+parent p = case p of
+  Eve  -> choose<:Person:> Alice Bob
+  Paul -> choose<:Person:> Eve Peter
+  x    -> failed<:Person:>
+
+children :: Person -> Person
+children a = let b :: Person free in case a == parent b of
+  { True -> b; False -> failed<:Person:> }
+
+grandparent :: Person -> Person
+grandparent a = let b :: Person free in let c :: Person free in
+  case b == parent a of
+    True -> case c == parent b of
+      True -> c
+      False -> failed<:Person:>
+    False -> failed<:Person:>
