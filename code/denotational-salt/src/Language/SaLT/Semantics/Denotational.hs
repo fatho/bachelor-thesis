@@ -259,9 +259,10 @@ primEq' :: Value n -> Value n -> Either String Bool
 primEq' (VNat n) (VNat m) = Right $ n == m
 primEq' (VBot n) _        = Left n
 primEq' _        (VBot n) = Left n
-primEq' (VCon c1 xs _) (VCon c2 ys _) = (c1 == c2 && ) . and <$> zipWithM primEq' xs ys
+primEq' (VCon c1 xs _) (VCon c2 ys _)
+  | c1 == c2  = Core.listEqM primEq' xs ys
+  | otherwise = Right False
 primEq' _ _ = error "primEq: wrong type"
-
 
 -- | Primitive addition which is built-in for naturals.
 primAdd :: Value n -> Value n -> Value n

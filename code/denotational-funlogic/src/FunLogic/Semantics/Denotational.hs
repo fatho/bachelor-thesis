@@ -28,6 +28,7 @@ module FunLogic.Semantics.Denotational
   , decrementStep
   , anything, anyConstructor, anyNatural
   , bindVar, bindVars, bindTyVars
+  , listEqM
   ) where
 
 import           Control.Applicative
@@ -187,3 +188,11 @@ bindVars vars = local (termEnv %~ M.union vars)
 -- | Evaluate the body with new type variable bindings in the type environment
 bindTyVars :: (MonadReader (EvalEnv bnd val n) m, Monad n) => M.Map FL.TVName (n (val n)) -> m a -> m a
 bindTyVars tyvars = local (typeEnv %~ M.union tyvars)
+
+-- | Monadic list equality test. Uses by CuMin and SaLT specific equality tests.
+listEqM :: Monad m => (v -> v -> m Bool) -> [v] -> [v] -> m Bool
+listEqM peq (x : xs) (y : ys) = peq x y >>= \case
+  True ->  listEqM peq xs ys
+  False -> return False
+listEqM _ []       []         = return True
+listEqM _ _        _          = error "Argument lists have different length"
