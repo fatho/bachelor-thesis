@@ -1,0 +1,20 @@
+data Person = Alice | Bob | Eve | Peter | Paul
+
+parent :: Person -> Set Person
+parent = \p :: Person -> case p of
+  Eve  -> choose<:Person:> {Alice} {Bob}
+  Paul -> choose<:Person:> {Eve} {Peter}
+  x    -> failed<:Set Person:>
+
+children :: Person -> Set Person
+children = \a :: Person -> unknown<:Person:> >>= \b :: Person ->
+  parent b >>= \p :: Person -> case a == p of
+    { True -> {b}; False -> failed<:Set Person:> }
+
+grandparent :: Person -> Set Person
+grandparent = \a :: Person -> unknown<:Person:> >>= \b :: Person ->
+  unknown<:Person:> >>= \c :: Person -> parent a >>= \pa :: Person ->
+    case b == pa of
+      True -> parent b >>= \pb :: Person -> case c == pb of
+        { True -> {c}; False -> failed<:Set Person:> }
+      False -> failed<:Set Person:>
