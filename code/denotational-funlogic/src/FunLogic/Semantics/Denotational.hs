@@ -153,8 +153,8 @@ anyConstructor visited ty subst (FL.ConDecl name args) = do
   -- evaluates all constructor arguments in an interleaved fashion
   anyargs <- Search.mapFairM (decrementStep . anything' visited . instantiateTyVars) args
   return $ dataValue name anyargs ty
-{-
 
+{- NOTE: This variant is slower than the one below and does not provide any benefits.
 -- | Generate naturals up to 'stepIdx' bits.
 anyNatural :: (NonDeterministic n) => Eval bnd val n Integer
 {-# INLINABLE anyNatural #-}
@@ -165,17 +165,14 @@ anyNatural = pure 0 <|> go 1 where
     pure n <|> Search.branch
       (decrementStep $ go $ 2*n)
       (decrementStep $ go $ 2*n + 1)
-
--- 3.167 26.380
 -}
+
 -- | Generate naturals up to 'stepIdx' bits.
 anyNatural :: (NonDeterministic n) => Eval bnd val n Integer
 {-# INLINABLE anyNatural #-}
-anyNatural = pure 0 <|> go 0 where
-  go len = view stepIdx >>= \idx -> do
-    guard (not $ isZero idx)
-    -- generate current level, then next level
-    foldr mplus (decrementStep $ go $ len + 1) (fmap return [2^len..2^(len+1)-1])
+anyNatural = view stepIdx >>= \case
+  StepNatural n -> msum $ fmap pure [0..2^n-1]
+  StepInfinity  -> msum $ fmap pure [0..]
 
 -- | Evaluate the body with new variable bindings in the term environment
 bindVar :: (MonadReader (EvalEnv bnd val n) m, Monad n) => FL.VarName -> val n -> m a -> m a

@@ -207,10 +207,12 @@ mkFun :: (Value n -> Value n) -> Value n
 mkFun f = UIO.unsafePerformIO $ VFun f <$> newUnique
 
 -- | Constructs a singleton set value.
+-- Uses unsafePerformIO internally.
 mkSet :: Applicative n => n (Value n) -> Value n
 mkSet vs = UIO.unsafePerformIO $ VSet vs <$> newUnique
 
 -- | Constructs a singleton set value.
+-- Uses unsafePerformIO internally.
 mkSetSingleton :: Applicative n => Value n -> Value n
 mkSetSingleton = mkSet . pure
 
