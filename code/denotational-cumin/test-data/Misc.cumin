@@ -1,0 +1,11 @@
+loop :: forall a. a
+loop = loop<:a:>
+
+seq :: forall a b. a -> b -> b
+seq x y = case x of { x' -> y }
+
+main :: Bool
+main = seq<:Bool,Bool:> loop<:Bool:> True
+
+from :: Nat -> Nat
+from n = choose<:Nat:> n (fromR (n + 1))

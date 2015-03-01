@@ -1,1 +1,69 @@
 data Peano = Z | S Peano
+
+addPeano :: Peano -> Peano -> Peano
+addPeano a b = case a of
+  Z -> b
+  S r -> S (addPeano r b)
+
+peanoToNat :: Peano -> Nat
+peanoToNat p = case p of
+  Z -> 0
+  S r -> 1 + peanoToNat r
+
+data Bin = O Bin | I0 | I1 Bin
+
+data Bin0 = B0 | B1 Bin
+
+addBin :: Bin -> Bin -> Bin
+addBin = addBinC False
+
+addBin0 :: Bin0 -> Bin0 -> Bin0
+addBin0 a b = case a of
+  B0 -> b
+  B1 as -> case b of
+    B0 -> a
+    B1 bs -> B1 (addBin as bs)
+
+binToNat :: Bin -> Nat
+binToNat = binToNat' 1
+
+binToNat' :: Nat -> Bin -> Nat
+binToNat' i b = case b of
+  O r  -> binToNat' (i + i) r
+  I1 r -> i + binToNat' (i + i) r
+  I0   -> i
+
+addBinC :: Bool -> Bin -> Bin -> Bin
+addBinC carry a b = case a of
+  O as -> case b of
+    O bs -> case carry of
+      False -> O (addBinC False as bs)
+      True -> I1 (addBinC False as bs)
+    I1 bs -> case carry of
+      False -> I1 (addBinC False as bs)
+      True -> O (addBinC True as bs)
+    I0 -> case carry of
+      False -> I1 as
+      True -> O (addBinC False as I0)
+
+  I1 as -> case b of
+    O bs -> case carry of
+      False -> I1 (addBinC False as bs)
+      True -> O (addBinC True as bs)
+    I1 bs -> case carry of
+      False -> O (addBinC True as bs)
+      True -> I1 (addBinC True as bs)
+    I0 -> case carry of
+      False -> O (addBinC False as I0)
+      True -> I1 (addBinC False as I0)
+
+  I0 -> case b of
+    O bs -> case carry of
+      False -> I1 bs
+      True -> O (addBinC False I0 bs)
+    I1 bs -> case carry of
+      False -> O (addBinC False I0 bs)
+      True -> I1 (addBinC False I0 bs)
+    I0 -> case carry of
+      False -> O I0
+      True -> I1 I0
