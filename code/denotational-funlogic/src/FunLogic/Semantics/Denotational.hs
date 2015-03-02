@@ -12,7 +12,7 @@
 module FunLogic.Semantics.Denotational
   (
   -- * Abstractions
-    NonDeterministic
+    Search.MonadSearch
   , Value (..)
   , StepIndex (..)
   , decrement, isZero
@@ -42,10 +42,6 @@ import qualified Text.PrettyPrint.ANSI.Leijen       as PP
 
 import qualified FunLogic.Semantics.Search          as Search
 import qualified FunLogic.Core.AST                  as FL
-
--- | Encapsulates the Alternative and MonadPlus constraints to be prepared
--- for the upcoming Applicative/Monad hierarchy in GHC 7.10
-type NonDeterministic m = (Alternative m, MonadPlus m, Search.MonadSearch m)
 
 -- | Type class to be implemented by the specific value type.
 class Value (v :: (* -> *) -> *) where
@@ -98,9 +94,6 @@ data EvalEnv bnd val nd
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval bnd val n = ReaderT (EvalEnv bnd val n) n
 
--- | Required context for the Eval type parameters.
-type EvalContext bnd val n = (FL.IsBinding bnd, Value val, NonDeterministic n)
-
 makeLenses ''EvalEnv
 
 -- | Run Eval computations.
@@ -119,14 +112,14 @@ applyTySubst f (FL.TVar tv) = f tv
 applyTySubst f (FL.TCon n xs) = FL.TCon n $ map (applyTySubst f) xs
 
 -- | Generates all possible inhabitants of the given type up to the step index provided by the environment.
-anything :: (EvalContext bnd val n) => FL.Type -> Eval bnd val n (val n)
+anything :: (Value val, Search.MonadSearch n) => FL.Type -> Eval bnd val n (val n)
 {-# INLINABLE anything #-}
 anything = anything' HS.empty
 
 -- | Generates all possible inhabitants of the given type up to the step index provided by the environment.
 -- This function checks for left-recursion in algebraic data types and inserts bottom values appropriately to
 -- allow termination.
-anything' :: (EvalContext bnd val n) => HS.HashSet FL.TyConName -> FL.Type -> Eval bnd val n (val n)
+anything' :: (Value val, Search.MonadSearch n) => HS.HashSet FL.TyConName -> FL.Type -> Eval bnd val n (val n)
 {-# INLINABLE anything' #-}
 anything' _  (FL.TVar tv)         = view (typeEnv.at tv) >>= lift . fromMaybe (error "free type variable")
 anything' _  (FL.TFun _ _)        = error "free variables cannot have a function type"
@@ -146,7 +139,7 @@ anything' vs (FL.TCon tycon args) = view stepIdx >>= \case
             `Search.branch` Search.branchMany [ anyConstructor vs args subst constr | constr <- conRest ] )
 
 -- | Generates all inhabitants of the given constructor.
-anyConstructor :: (EvalContext bnd val n) => HS.HashSet FL.TyConName -> [FL.Type] -> M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
+anyConstructor :: (Value val, Search.MonadSearch n) => HS.HashSet FL.TyConName -> [FL.Type] -> M.Map FL.TVName FL.Type -> FL.ConDecl -> Eval bnd val n (val n)
 {-# INLINABLE anyConstructor #-}
 anyConstructor visited ty subst (FL.ConDecl name args) = do
   let instantiateTyVars = applyTySubst $ \tv -> fromMaybe (FL.TVar tv) (subst^.at tv)
@@ -156,7 +149,7 @@ anyConstructor visited ty subst (FL.ConDecl name args) = do
 
 {- NOTE: This variant is slower than the one below and does not provide any benefits.
 -- | Generate naturals up to 'stepIdx' bits.
-anyNatural :: (NonDeterministic n) => Eval bnd val n Integer
+anyNatural :: (Search.MonadSearch n) => Eval bnd val n Integer
 {-# INLINABLE anyNatural #-}
 anyNatural = pure 0 <|> go 1 where
   go n = view stepIdx >>= \idx -> do
@@ -168,7 +161,7 @@ anyNatural = pure 0 <|> go 1 where
 -}
 
 -- | Generate naturals up to 'stepIdx' bits.
-anyNatural :: (NonDeterministic n) => Eval bnd val n Integer
+anyNatural :: (Search.MonadSearch n) => Eval bnd val n Integer
 {-# INLINABLE anyNatural #-}
 anyNatural = view stepIdx >>= \case
   StepNatural n -> msum $ fmap pure [0..2^n-1]

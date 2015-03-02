@@ -12,7 +12,7 @@ module Language.CuMin.Semantics.Denotational
   -- * step indices
   , Core.StepIndex (..)
   -- * further core types
-  , Core.NonDeterministic
+  , Search.MonadSearch
   ) where
 
 import           Control.Applicative
@@ -134,7 +134,7 @@ prune = Pruning.pruneNonMaximalN 20
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
-eval :: (Core.NonDeterministic n) => CuMin.Exp -> Eval n (Value n)
+eval :: (Search.MonadSearch n) => CuMin.Exp -> Eval n (Value n)
 -- there is no non-determinism in the following cases:
 ------------------------------------------------------
 eval (CuMin.EVar var) = fromMaybe (error "local variable not declared") <$> view (Core.termEnv . at var)
@@ -187,7 +187,7 @@ mkFun :: (Value n -> n (Value n)) -> Value n
 mkFun f = UIO.unsafePerformIO $ VFun f <$> newUnique
 
 -- | Matches the given value against the list of case alternatives and evaluates it.
-patternMatch :: (Core.NonDeterministic n) => Value n -> [CuMin.Alt] -> Eval n (Value n)
+patternMatch :: (Search.MonadSearch n) => Value n -> [CuMin.Alt] -> Eval n (Value n)
 patternMatch (VBot x)   _ = return $ VBot x
 patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
@@ -227,7 +227,7 @@ primAdd (VBot n) (VBot _) = VBot n
 primAdd _ _ = error "primAdd: wrong type"
 
 -- | Function application lifted to values.
-primApp :: Core.NonDeterministic n => Value n -> Value n -> Eval n (Value n)
+primApp :: Search.MonadSearch n => Value n -> Value n -> Eval n (Value n)
 primApp (VFun f _) a = lift $ f a
 primApp (VBot n) _ = return $ VBot n
 primApp _ _ = error "application of non-function type"
