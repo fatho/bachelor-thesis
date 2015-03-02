@@ -24,6 +24,7 @@ import           Text.Printf                           (printf)
 import           Text.Trifecta
 
 import qualified FunLogic.Core.Repl                    as Repl
+import qualified FunLogic.Semantics.Pruning            as Pruning
 import qualified FunLogic.Semantics.Search             as Search
 import qualified Language.CuMin.Semantics.Denotational as Denot
 
@@ -63,7 +64,9 @@ cuminLoader :: FilePath -> IO (Either PP.Doc CuMin.Module)
 cuminLoader filePath = runEitherT $ do
   modul <- EitherT $ CuMin.buildModuleFromFile filePath
   bimapEitherT PP.pretty (const modul) $ hoistEither
-    $ CuMin.evalTC (CuMin.unsafeIncludeModule CuMin.preludeModule >> CuMin.checkModule modul) def def
+    $ CuMin.evalTC' $ do
+        CuMin.unsafeIncludeModule CuMin.preludeModule
+        CuMin.checkModule modul
 
 -- | REPL environment
 environment :: Repl.ReplEnv CuMinRepl
@@ -95,7 +98,7 @@ data ObservableSet = forall m. (Search.Observable m) => ObservableSet (m (Denot.
 -- | Evaluates a SaLT expression using the given strategy.
 evalWithStrategy
           :: Repl.Strategy
-          -> (forall m. (Denot.NonDeterministic m) => Denot.Eval m (Denot.Value m) )
+          -> (forall m. (Search.MonadSearch m) => Denot.Eval m (Denot.Value m) )
           -> CuMin.Module -> Denot.StepIndex -> ObservableSet
 evalWithStrategy Repl.DFS action modul idx = ObservableSet (Denot.runEval action modul idx :: DFSMonad (Denot.Value DFSMonad))
 evalWithStrategy Repl.BFS action modul idx = ObservableSet (Denot.runEval action modul idx :: BFSMonad (Denot.Value BFSMonad))
