@@ -16,7 +16,7 @@ module Language.SaLT.Semantics.Denotational
   -- * step indices
   , Core.StepIndex (..)
   -- * further core types
-  , Core.NonDeterministic
+  , Search.MonadSearch
   ) where
 
 import           Control.Applicative
@@ -151,7 +151,7 @@ runEval action context stepMax = runReader action env where
   cns = context ^. SaLT.modADTs . traverse . to SaLT.adtConstructorTypes
 
 -- | Returns all possible inhabitants of a type as a set.
-unknown :: (Core.NonDeterministic n) => SaLT.Type -> EvalExp n (Value n)
+unknown :: (Search.MonadSearch n) => SaLT.Type -> EvalExp n (Value n)
 unknown = captureNonDet . Core.anything
 
 -- | Returns the least element of a given type.
@@ -168,7 +168,7 @@ captureNonDet = mapReaderT (Identity . mkSet)
 -- | Evaluates a SaLT expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
-eval :: (Core.NonDeterministic n) => SaLT.Exp -> EvalExp n (Value n)
+eval :: (Search.MonadSearch n) => SaLT.Exp -> EvalExp n (Value n)
 -- there is no non-determinism in the following cases:
 ------------------------------------------------------
 eval (SaLT.EVar var) = fromMaybe (error "local variable not declared") <$> view (Core.termEnv . at var)
@@ -217,7 +217,7 @@ mkSetSingleton :: Applicative n => Value n -> Value n
 mkSetSingleton = mkSet . pure
 
 -- | Matches the given value against the list of case alternatives and evaluates it.
-patternMatch :: (Core.NonDeterministic n) => Value n -> [SaLT.Alt] -> EvalExp n (Value n)
+patternMatch :: (Search.MonadSearch n) => Value n -> [SaLT.Alt] -> EvalExp n (Value n)
 patternMatch (VBot x)   _ = return $ VBot x
 patternMatch (VNat _)   _ = error "cannot pattern match on Nat"
 patternMatch (VFun _ _) _ = error "cannot pattern match on functions"
@@ -236,17 +236,17 @@ matches :: SaLT.DataConName -> SaLT.Alt -> Bool
 matches _ (SaLT.Alt (SaLT.PVar _) _) = True
 matches cname (SaLT.Alt (SaLT.PCon pname _) _) = cname == pname
 
-evalPrim :: (Core.NonDeterministic n) => SaLT.PrimOp -> [Value n] -> EvalExp n (Value n)
+evalPrim :: (Search.MonadSearch n) => SaLT.PrimOp -> [Value n] -> EvalExp n (Value n)
 evalPrim prim [x,y] = return $ primOp prim x y
 evalPrim _ _        = error "evalPrim: invalid number of arguments for primitive operation"
 
-primOp :: (Core.NonDeterministic n) => SaLT.PrimOp -> Value n -> Value n -> Value n
+primOp :: (Search.MonadSearch n) => SaLT.PrimOp -> Value n -> Value n -> Value n
 primOp SaLT.PrimAdd  = primAdd
 primOp SaLT.PrimEq   = primEq
 primOp SaLT.PrimBind = primBind
 
 -- | Primitve monadic bind on sets. Uses fair conjunction.
-primBind :: (Core.NonDeterministic n) => Value n -> Value n -> Value n
+primBind :: (Search.MonadSearch n) => Value n -> Value n -> Value n
 primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Search.>>+ \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
@@ -275,7 +275,7 @@ primAdd (VBot n) (VBot _) = VBot n
 primAdd _ _ = error "primAdd: wrong type"
 
 -- | Function application lifted to values.
-primApp :: Core.NonDeterministic n => Value n -> Value n -> Value n
+primApp :: Search.MonadSearch n => Value n -> Value n -> Value n
 primApp (VFun f _) a = f a
 primApp (VBot n) _ = VBot n
 primApp _ _ = error "application of non-function type"

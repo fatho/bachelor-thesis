@@ -1,0 +1,39 @@
+caseFailure :: forall a.List a -> List a
+caseFailure  x = case x of { Nil -> failed<:List a:>; y -> y }
+
+guard :: forall a. Bool -> a -> a
+guard b x = case b of { False -> failed<:a:>; True -> x }
+
+subtract :: Nat -> Nat -> Nat
+subtract a b = let k :: Nat free in guard<:Nat:> (a == b + k) k
+
+{- The test application automatically evaluates all functions beginning with "eqTest" and compares
+   the results of the CuMin and SaLT interpreter on them.
+
+   The resulting values must not return function types, since they cannot be compared.
+-}
+
+eqTestCase1 :: List Nat
+eqTestCase1 = caseFailure<:Nat:> []<:Nat:>
+
+eqTestCase2 :: List Nat
+eqTestCase2 = caseFailure<:Nat:> [1,2,3]<:Nat:>
+
+eqTestCase3 :: List Nat
+eqTestCase3 = caseFailure<:Nat:> failed<:List Nat:>
+
+eqTestLetFreeFinite :: Either (Maybe Bool) Bool
+eqTestLetFreeFinite = let x :: Either (Maybe Bool) Bool free in x
+
+eqTestLetFreeInfinite1 :: List Bool
+eqTestLetFreeInfinite1 = let x :: List Bool free in x
+
+eqTestLetFreeInfinite2 :: List Nat
+eqTestLetFreeInfinite2 = let x :: List Nat free in x
+
+eqTestAddition :: Nat
+eqTestAddition = 10 + let n :: Nat free in n
+
+eqTestSubtraction :: Nat
+eqTestSubtraction = subtract (choose<:Nat:> 5 7) 5
+

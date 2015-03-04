@@ -100,7 +100,7 @@ data ObservableValue = forall m. (Search.Observable m) => ObservableValue (Denot
 -- | Evaluates a SaLT expression using the given strategy.
 evalWithStrategy
           :: Repl.Strategy
-          -> (forall m. (Denot.NonDeterministic m) => Denot.EvalExp m (Denot.Value m) )
+          -> (forall m. (Search.MonadSearch m) => Denot.EvalExp m (Denot.Value m) )
           -> SaLT.Module -> Denot.StepIndex -> ObservableValue
 evalWithStrategy Repl.DFS action modul idx = ObservableValue (Denot.runEval action modul idx :: Denot.Value DFSMonad)
 evalWithStrategy Repl.BFS action modul idx = ObservableValue (Denot.runEval action modul idx :: Denot.Value BFSMonad)
