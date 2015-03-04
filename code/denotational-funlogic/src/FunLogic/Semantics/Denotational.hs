@@ -1,13 +1,14 @@
 {-# LANGUAGE ConstraintKinds           #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FunctionalDependencies    #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MonadComprehensions       #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE RecordWildCards           #-}
+{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 module FunLogic.Semantics.Denotational
   (
@@ -35,13 +36,13 @@ import           Control.Applicative
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.Reader
-import qualified Data.Map                           as M
+import qualified Data.HashSet                 as HS
+import qualified Data.Map                     as M
 import           Data.Maybe
-import qualified Data.HashSet                       as HS
-import qualified Text.PrettyPrint.ANSI.Leijen       as PP
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 
-import qualified FunLogic.Semantics.Search          as Search
-import qualified FunLogic.Core.AST                  as FL
+import qualified FunLogic.Core.AST            as FL
+import qualified FunLogic.Semantics.Search    as Search
 
 -- | Type class to be implemented by the specific value type.
 class Value (v :: (* -> *) -> *) where
