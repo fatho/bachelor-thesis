@@ -251,6 +251,8 @@ primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Searc
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error: "
+primBind (VBot s) _ = VBot s
+primBind _ (VBot s) = VBot s
 primBind _ _ = error ">>= : wrong arguments"
 
 -- | Primitive equality operator which is built-in for naturals.
