@@ -1,6 +1,6 @@
-[submodule "ba-funlogic-common"]
-	path = ba-funlogic-common
-	url = https://github.com/fatho/ba-funlogic-common.git
+[submodule "dependencies/cumin2salt"]
+	path = dependencies/cumin2salt
+	url = https://github.com/fanzier/cumin2salt.git
 [submodule "dependencies/ba-funlogic-common"]
 	path = dependencies/ba-funlogic-common
 	url = https://github.com/fatho/ba-funlogic-common.git
