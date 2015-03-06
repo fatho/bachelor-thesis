@@ -103,11 +103,13 @@ spec = do
       [CuMin.cuminExp| failed<:Nat:> + 1 |]             `shouldEvalTo` [Core.bottomValue ""]
       [CuMin.cuminExp| 1 + failed<:Nat:> |]             `shouldEvalTo` [Core.bottomValue ""]
       [CuMin.cuminExp| failed<:Nat:> + failed<:Nat:> |] `shouldEvalTo` [Core.bottomValue ""]
-    it "comparison" $ do
+    it "comparison (Nat)" $ do
       [CuMin.cuminExp| 1 == 1 |]                         `shouldEvalTo` [CuMin.boolValue True]
       [CuMin.cuminExp| failed<:Nat:> == 1 |]             `shouldEvalTo` [Core.bottomValue ""]
       [CuMin.cuminExp| 1 == failed<:Nat:> |]             `shouldEvalTo` [Core.bottomValue ""]
       [CuMin.cuminExp| failed<:Nat:> == failed<:Nat:> |] `shouldEvalTo` [Core.bottomValue ""]
+    it "comparison (Data)"
+      pending
     it "let binding" $ do
       [CuMin.cuminExp| let x = 1 in x |]              `shouldEvalTo` [Core.naturalValue 1]
       [CuMin.cuminExp| let x = 1 in let x = 2 in x |] `shouldEvalTo` [Core.naturalValue 2]

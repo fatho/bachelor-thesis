@@ -100,11 +100,13 @@ spec = do
       [SaLT.saltExp| failed<:Nat:> + 1 |]             `shouldEvalTo` Core.bottomValue ""
       [SaLT.saltExp| 1 + failed<:Nat:> |]             `shouldEvalTo` Core.bottomValue ""
       [SaLT.saltExp| failed<:Nat:> + failed<:Nat:> |] `shouldEvalTo` Core.bottomValue ""
-    it "comparison" $ do
+    it "comparison (Nat)" $ do
       [SaLT.saltExp| 1 == 1 |]                         `shouldEvalTo` SaLT.boolValue True
       [SaLT.saltExp| failed<:Nat:> == 1 |]             `shouldEvalTo` Core.bottomValue ""
       [SaLT.saltExp| 1 == failed<:Nat:> |]             `shouldEvalTo` Core.bottomValue ""
       [SaLT.saltExp| failed<:Nat:> == failed<:Nat:> |] `shouldEvalTo` Core.bottomValue ""
+    it "comparison (Data)"
+      pending
     it "lambdas" $ do
       [SaLT.saltExp| (\x :: Nat -> x) 1 |]              `shouldEvalTo` Core.naturalValue 1
       [SaLT.saltExp| (\x :: Nat -> \x :: Nat -> x) 1 2 |] `shouldEvalTo` Core.naturalValue 2
