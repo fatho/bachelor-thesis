@@ -41,5 +41,5 @@ pruneNonMaximal' process = go [] where
   check' [] _       = Just []
   check' (x:xs) v
     | v `PO.leq` x = Nothing
-    | x `PO.lt`  v = check xs v
-    | otherwise    = (x:) <$> check xs v
+    | x `PO.lt`  v = check' xs v
+    | otherwise    = (x:) <$> check' xs v
