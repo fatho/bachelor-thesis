@@ -4,8 +4,42 @@ caseFailure  x = case x of { Nil -> failed<:List a:>; y -> y }
 guard :: forall a. Bool -> a -> a
 guard b x = case b of { False -> failed<:a:>; True -> x }
 
-subtract :: Nat -> Nat -> Nat
-subtract a b = let k :: Nat free in guard<:Nat:> (a == b + k) k
+minus :: Nat -> Nat -> Nat
+minus a b = let k :: Nat free in guard<:Nat:> (a == b + k) k
+
+mult :: Nat -> Nat -> Nat
+mult a b = case a == 0 of
+  True -> 0
+  False -> b + mult (minus a 1) b
+
+fac :: Nat -> Nat
+fac n = case n == 0 of
+  False -> mult n (fac (minus n 1))
+  True  -> 1
+
+{-
+Example from Ancestors.cumin
+-}
+
+data Person = Alice | Bob | Eve | Peter | Paul
+
+parent :: Person -> Person
+parent p = case p of
+  Eve  -> choose<:Person:> Alice Bob
+  Paul -> choose<:Person:> Eve Peter
+  x    -> failed<:Person:>
+
+children :: Person -> Person
+children a = let b :: Person free in case a == parent b of
+  { True -> b; False -> failed<:Person:> }
+
+grandparent :: Person -> Person
+grandparent a = let b :: Person free in let c :: Person free in
+  case b == parent a of
+    True -> case c == parent b of
+      True -> c
+      False -> failed<:Person:>
+    False -> failed<:Person:>
 
 {- The test application automatically evaluates all functions beginning with "eqTest" and compares
    the results of the CuMin and SaLT interpreter on them.
@@ -13,14 +47,14 @@ subtract a b = let k :: Nat free in guard<:Nat:> (a == b + k) k
    The resulting values must not return function types, since they cannot be compared.
 -}
 
-eqTestCase1 :: List Nat
-eqTestCase1 = caseFailure<:Nat:> []<:Nat:>
+eqTestCaseFailureCase1 :: List Nat
+eqTestCaseFailureCase1 = caseFailure<:Nat:> []<:Nat:>
 
-eqTestCase2 :: List Nat
-eqTestCase2 = caseFailure<:Nat:> [1,2,3]<:Nat:>
+eqTestCaseFailureCase2 :: List Nat
+eqTestCaseFailureCase2 = caseFailure<:Nat:> [1,2,3]<:Nat:>
 
-eqTestCase3 :: List Nat
-eqTestCase3 = caseFailure<:Nat:> failed<:List Nat:>
+eqTestCaseFailureCase3 :: List Nat
+eqTestCaseFailureCase3 = caseFailure<:Nat:> failed<:List Nat:>
 
 eqTestLetFreeFinite :: Either (Maybe Bool) Bool
 eqTestLetFreeFinite = let x :: Either (Maybe Bool) Bool free in x
@@ -35,5 +69,22 @@ eqTestAddition :: Nat
 eqTestAddition = 10 + let n :: Nat free in n
 
 eqTestSubtraction :: Nat
-eqTestSubtraction = subtract (choose<:Nat:> 5 7) 5
+eqTestSubtraction = minus (choose<:Nat:> 5 7) 5
 
+eqTestLetBinding1 :: Nat
+eqTestLetBinding1 = let x = 1 in let y = choose<:Nat:> 2 3 in x + y
+
+eqTestLetBindingShadowing :: Bool
+eqTestLetBindingShadowing = let x = False in let x = True in x
+
+eqTestAncestorsChildren :: Person
+eqTestAncestorsChildren = children Alice
+
+eqTestAncestorsParent :: Person
+eqTestAncestorsParent = parent Eve
+
+eqTestAncestorsGrandparent :: Person
+eqTestAncestorsGrandparent = grandparent Paul
+
+eqTestRecursion :: Nat
+eqTestRecursion = fac 5
