@@ -52,9 +52,7 @@ import           Control.Monad.State.Strict
 import qualified Data.List                       as List
 import qualified Data.Maybe                      as Maybe
 import           Data.Monoid
-import qualified System.Console.GetOpt           as GetOpt
 import qualified System.Console.Haskeline        as Haskeline
-import qualified System.Environment              as Env
 import qualified Text.PrettyPrint.ANSI.Leijen    as PP
 import           Text.Trifecta
 
@@ -70,21 +68,6 @@ interruptionHandler = do
   liftIO $ putStrLn "Interrupted!"
   return Continue
 
--- | command line options
-cmdOptions :: [GetOpt.OptDescr CmdLineOpt]
-cmdOptions = []
-
--- | Parses command line options, calling the given continuation on success.
-parseOptions :: (Applicative m, MonadIO m) => m (Either PP.Doc ([CmdLineOpt], [FilePath]))
-parseOptions = do
-  (opts, files, errors) <- GetOpt.getOpt GetOpt.RequireOrder cmdOptions <$> liftIO Env.getArgs
-  prog <- liftIO Env.getProgName
-  if null errors
-    then return $ Right (opts, files)
-    else return $ Left $ PP.text "Invalid options: "
-      PP.<$> PP.indent 2 (PP.vsep $ map PP.text errors)
-      PP.<$> PP.text (GetOpt.usageInfo prog [])
-
 -- | Build the initial REPL state from the environment
 buildInitialState :: TagIsBinding tag => ReplEnv tag -> TagState tag -> ReplState tag
 buildInitialState env cs = ReplState
@@ -99,25 +82,23 @@ buildInitialState env cs = ReplState
   }
 
 -- | Start the REPL.
-runRepl :: TagIsBinding tag => ReplEnv tag -> TagState tag -> IO ()
-runRepl env cs = flip runReaderT envWithBuiltins
+runRepl :: TagIsBinding tag => [FilePath] -> ReplEnv tag -> TagState tag -> IO ()
+runRepl files env cs = flip runReaderT envWithBuiltins
     $ flip evalStateT (buildInitialState envWithBuiltins cs)
-    $ Haskeline.runInputT Haskeline.defaultSettings repl
+    $ Haskeline.runInputT Haskeline.defaultSettings (repl files)
   where
     envWithBuiltins = env
       & replCustomCommands   %~ (++ builtinCommands)
       & replCustomProperties %~ (++ builtinProperties)
 
 -- | Run the loop.
-repl :: TagIsBinding tag => ReplInputM tag ()
-repl = parseOptions >>= \case
-  Left msg -> putDocLn msg
-  Right (_, files) -> do
-    mapM_ loadModule files
-    -- build prompt and run loop
-    prompt <- Prompt <$> view replPrompt <*> pure parseInput
-    let doIt = askInput prompt >>= Maybe.fromMaybe (return Break)
-    while $ runInterruptible doIt interruptionHandler
+repl :: TagIsBinding tag => [FilePath] -> ReplInputM tag ()
+repl files = do
+  mapM_ loadModule files
+  -- build prompt and run loop
+  prompt <- Prompt <$> view replPrompt <*> pure parseInput
+  let doIt = askInput prompt >>= Maybe.fromMaybe (return Break)
+  while $ runInterruptible doIt interruptionHandler
 
 -- | Parser for a line of REPL input
 replLineParser :: [CommandDesc tag] -> Parser (Command tag) -> Parser (Command tag)

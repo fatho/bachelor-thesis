@@ -7,8 +7,10 @@
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE ViewPatterns              #-}
 module Main where
 
 import           Control.Applicative
@@ -16,9 +18,12 @@ import           Control.Lens
 import qualified Control.Monad.Logic                  as Logic
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
+import           Data.Char                            (toLower)
 import           Data.Default.Class
 import qualified Data.Set                             as Set
+import qualified System.Console.GetOpt                as GetOpt
 import           System.CPUTime                       (getCPUTime)
+import qualified System.Environment                   as Env
 import qualified Text.PrettyPrint.ANSI.Leijen         as PP
 import           Text.Printf                          (printf)
 import           Text.Trifecta
@@ -27,14 +32,49 @@ import qualified FunLogic.Core.Repl                   as Repl
 import qualified FunLogic.Semantics.Search            as Search
 import qualified Language.SaLT.Semantics.Denotational as Denot
 
-import qualified Language.SaLT.AST                    as SaLT
-import qualified Language.SaLT.ModBuilder             as SaLT
-import qualified Language.SaLT.Parser                 as SaLT
-import qualified Language.SaLT.Prelude                as SaLT
-import qualified Language.SaLT.Pretty                 as SaLT
-import qualified Language.SaLT.TypeChecker            as SaLT
+import qualified Language.SaLT                        as SaLT
 
 import qualified Debug.Trace                          as Debug
+
+data SaltOpts = SaltOpts
+  { _optPrelude :: SaLT.Module
+  } deriving (Show)
+
+makeLenses ''SaltOpts
+
+defaultOptions :: SaltOpts
+defaultOptions = SaltOpts { _optPrelude = SaLT.preludeModule }
+
+parsePreludeOpt :: String -> Either String SaLT.Module
+parsePreludeOpt (map toLower->"salt") = Right SaLT.preludeModule
+parsePreludeOpt (map toLower->"cumin") = Right SaLT.cuminPreludeModule
+parsePreludeOpt (map toLower->"none") = Right $ SaLT.emptyModule "Empty"
+parsePreludeOpt _ = Left "accepted values are 'salt', 'cumin' and 'none'"
+
+combine :: Lens' a b -> (String -> Either String b) -> String -> Either [String] a -> Either [String] a
+combine val parse str (Left errs) = Left $ either (:) (const id) (parse str) errs
+combine val parse str (Right opts) = either (Left . pure) (\n -> Right (opts & val .~ n)) (parse str)
+
+-- | command line options
+cmdOptions :: [GetOpt.OptDescr (Either [String] SaltOpts -> Either [String] SaltOpts)]
+cmdOptions =
+  [GetOpt.Option "p" ["prelude"]
+    (GetOpt.ReqArg (combine optPrelude parsePreludeOpt) "PRELUDE")
+    "The prelude used by the REPL."
+  ]
+
+-- | Parses command line options, calling the given continuation on success.
+parseOptions :: (Applicative m, MonadIO m) => m (Either PP.Doc (SaltOpts, [FilePath]))
+parseOptions = do
+  (opts, files, errors) <- GetOpt.getOpt GetOpt.Permute cmdOptions <$> liftIO Env.getArgs
+  prog <- liftIO Env.getProgName
+  if null errors
+    then case foldl (flip id) (Right defaultOptions) opts of
+      Left msgs -> return $ Left $ PP.text "Invalid values:" PP.<$> PP.indent 2 (PP.vsep $ map PP.text msgs)
+      Right o -> return $ Right (o, files)
+    else return $ Left $ PP.text "Invalid options: "
+      PP.<$> PP.indent 2 (PP.vsep $ map PP.text errors)
+      PP.<$> PP.text (GetOpt.usageInfo prog [])
 
 -- | Tag identifying the SaLT REPL.
 data SaLTRepl
@@ -61,23 +101,19 @@ header =  PP.text "      ___           ___           ___       ___     "
   PP.<$$> PP.text "Welcome to the SaLT REPL. Enter :help for help."
   PP.<$$> PP.empty
 
--- | The Prelude module with another name
-interactivePrelude :: SaLT.Module
-interactivePrelude = SaLT.preludeModule & SaLT.modName .~ "Interactive"
-
 -- | Load and type check a SaLT file.
-saltLoader :: FilePath -> IO (Either PP.Doc SaLT.Module)
-saltLoader filePath = runEitherT $ do
+saltLoader :: SaLT.Module -> FilePath -> IO (Either PP.Doc SaLT.Module)
+saltLoader prelude filePath = runEitherT $ do
   modul <- EitherT $ SaLT.buildModuleFromFile filePath
   bimapEitherT PP.pretty (const modul) $ hoistEither
-    $ SaLT.evalTC (SaLT.unsafeIncludeModule SaLT.preludeModule >> SaLT.checkModule modul) def def
+    $ SaLT.evalTC (SaLT.unsafeIncludeModule prelude >> SaLT.checkModule modul) def def
 
 -- | REPL environment
-environment :: Repl.ReplEnv SaLTRepl
-environment = Repl.ReplEnv
-  { Repl._replPrelude = interactivePrelude
+environment :: SaLT.Module -> Repl.ReplEnv SaLTRepl
+environment prelude = Repl.ReplEnv
+  { Repl._replPrelude = prelude & SaLT.modName .~ "Interactive"
   , Repl._replPrompt  = PP.blue (PP.text "{\x03BB}> ")
-  , Repl._replLoader  = saltLoader
+  , Repl._replLoader  = saltLoader prelude
   , Repl._replInspectDefinition = SaLT.prettyBinding
   , Repl._replCustomProperties = []
   , Repl._replCustomCommands = saltReplCommands
@@ -149,7 +185,10 @@ checkInteractiveExpr expr = do
 main :: IO ()
 main = do
   PP.putDoc header
-  Repl.runRepl environment ()
+  parseOptions >>= \case
+    Left msg -> Repl.putDocLn msg
+    Right (opt, files) ->
+      Repl.runRepl files (environment $ _optPrelude opt) ()
 
 -- | Displays a SaLT value, using 'displayValueSet' for set values.
 displayValue :: (Search.Observable n) => Int -> Denot.Value n -> Repl.ReplInputM SaLTRepl ()

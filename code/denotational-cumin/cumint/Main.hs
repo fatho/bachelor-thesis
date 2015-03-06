@@ -18,7 +18,9 @@ import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
 import           Data.Default.Class
 import qualified Data.Set                              as Set
+import qualified System.Console.GetOpt                 as GetOpt
 import           System.CPUTime                        (getCPUTime)
+import qualified System.Environment                    as Env
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
 import           Text.Printf                           (printf)
 import           Text.Trifecta
@@ -34,6 +36,25 @@ import qualified Language.CuMin.Parser                 as CuMin
 import qualified Language.CuMin.Prelude                as CuMin
 import qualified Language.CuMin.Pretty                 as CuMin
 import qualified Language.CuMin.TypeChecker            as CuMin
+
+data CuminOpts = CuminOpts
+
+-- | command line options
+cmdOptions :: [GetOpt.OptDescr (Either [String] CuminOpts -> Either [String] CuminOpts)]
+cmdOptions = []
+
+-- | Parses command line options, calling the given continuation on success.
+parseOptions :: (Applicative m, MonadIO m) => m (Either PP.Doc (CuminOpts, [FilePath]))
+parseOptions = do
+  (opts, files, errors) <- GetOpt.getOpt GetOpt.Permute cmdOptions <$> liftIO Env.getArgs
+  prog <- liftIO Env.getProgName
+  if null errors
+    then case foldl (flip id) (Right CuminOpts) opts of
+      Left msgs -> return $ Left $ PP.text "Invalid values:" PP.<$> PP.indent 2 (PP.vsep $ map PP.text msgs)
+      Right o -> return $ Right (o, files)
+    else return $ Left $ PP.text "Invalid options: "
+      PP.<$> PP.indent 2 (PP.vsep $ map PP.text errors)
+      PP.<$> PP.text (GetOpt.usageInfo prog [])
 
 -- | Tag identifying the CuMin REPL.
 data CuMinRepl
@@ -147,7 +168,10 @@ checkInteractiveExpr expr = do
 main :: IO ()
 main = do
   PP.putDoc header
-  Repl.runRepl environment ()
+  parseOptions >>= \case
+    Left msg -> Repl.putDocLn msg
+    Right (_, files) ->
+      Repl.runRepl files environment ()
 
 -- | Incremental output of results.
 displayResults :: [Denot.Value n] -> Repl.ReplInputM CuMinRepl ()
