@@ -10,6 +10,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen          as PP
 
 import           FunLogic.Core                         as FL
 import           FunLogic.Semantics.Denotational       as DF
+import qualified FunLogic.Semantics.PartialOrder       as PO
 import qualified FunLogic.Semantics.Search             as Search
 import           Language.CuMin                        as CuMin
 import           Language.CuMin.Semantics.Denotational as DC
@@ -30,18 +31,28 @@ cuminToSaltVal (DC.VBot str) = DS.VBot str
 cuminToSaltVal (DC.VNat n) = DS.VNat n
 cuminToSaltVal (DC.VFun _ u) = DS.VFun undefined u
 
-cuminSaltEquiv :: (Search.MonadSearch n, Search.Observable n) => Proxy n -> DF.StepIndex -> CuMin.Module -> SaLT.Module -> CuMin.Exp -> SaLT.Exp -> Expectation
-cuminSaltEquiv ev step cmod smod cexp sexp = do
-  cvals <- Common.expectEval cexp cmod step ev
-  svals <- Common.expectEval sexp smod step ev >>= expectSet
-  svals `shouldBe` map cuminToSaltVal cvals
+cuminSaltEquiv :: CuMin.Module -> SaLT.Module -> CuMin.Exp -> SaLT.Exp -> DF.StepIndex -> Expectation
+cuminSaltEquiv cmod smod cexp sexp step = do
+  cvalsD <- Common.expectEval cexp cmod step Common.dfsProxy
+  cvalsB <- Common.expectEval cexp cmod step Common.bfsProxy
+  svalsD <- Common.expectEval sexp smod step Common.dfsProxy >>= expectSet
+  svalsB <- Common.expectEval sexp smod step Common.bfsProxy >>= expectSet
+  svalsD `shouldBe` map cuminToSaltVal cvalsD
+  svalsB `shouldBe` map cuminToSaltVal cvalsB
+  case mapM Common.castValue cvalsB of
+    Nothing -> fail "function value returned"
+    Just cvalsD' -> PO.partiallyEqual cvalsD cvalsD' `shouldBe` True
 
+-- | Performs the equivalence tests.
 spec :: Spec
 spec = do
   testModCuMin <- runIO $ fmap snd <$> CuMin.loadAndCheckCuMin CuMin.preludeModule "files/EquivTests.cumin" >>= \case
       Left err -> fail $ show $ PP.plain err
       Right mod' -> return mod'
   let testModSalt = C2S.cuminToSalt testModCuMin
+  -- check if the resulting SaLT program is indeed correct
+  either (fail . show . PP.plain . PP.pretty) (const $ return ())
+    $ SaLT.evalTC' (SaLT.checkModule testModSalt)
 
   describe "Equivalence tests" $
     forOf_ (FL.modBinds . traverse . FL.bindingsByName (List.isPrefixOf "eqTest")) testModCuMin $ \cuminBnd -> do
@@ -50,5 +61,5 @@ spec = do
         Nothing -> expectationFailure $ "SaLT translation does not contain " ++ name
         Just saltBnd
           | not $ null $ cuminBnd ^. CuMin.bindingArgs -> expectationFailure "equivalence test must not have arguments"
-          | otherwise -> cuminSaltEquiv Common.dfsProxy (DF.StepNatural 5) testModCuMin testModSalt
-                (cuminBnd ^. FL.bindingExpr) (saltBnd ^. FL.bindingExpr)
+          | otherwise -> cuminSaltEquiv testModCuMin testModSalt
+                (cuminBnd ^. FL.bindingExpr) (saltBnd ^. FL.bindingExpr) (DF.StepNatural 5)

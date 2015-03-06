@@ -30,6 +30,8 @@ import qualified FunLogic.Core.ModBuilder         as FL
 import qualified FunLogic.Semantics.Denotational  as Core
 import qualified FunLogic.Semantics.PartialOrder  as PO
 import qualified FunLogic.Semantics.Search        as Search
+import           Language.CuMin.Semantics.Denotational as DC
+import           Language.SaLT.Semantics.Denotational as DS
 
 import qualified Language.CuMin                   as CuMin
 
@@ -84,22 +86,38 @@ instance ExpectTypeable SaLT.Exp SaLT.Binding SaLT.Type where
       Right ty -> return ty
 
 instance ExpectEvaluation CuMin.Exp CuMin.Binding where
-  type Ret CuMin.Exp n = [CuMin.Value n]
+  type Ret CuMin.Exp n = [DC.Value n]
   expectEval expr modContext idx _ = Search.observeAll <$> cuminEvalGeneral expr modContext idx
 
 instance ExpectEvaluation SaLT.Exp SaLT.Binding where
-  type Ret SaLT.Exp n = SaLT.Value n
+  type Ret SaLT.Exp n = DS.Value n
   expectEval expr modContext idx _ =  saltEvalGeneral expr modContext idx
 
-cuminEvalGeneral :: (Search.MonadSearch n) => CuMin.Exp -> CuMin.Module -> Core.StepIndex -> IO (n (CuMin.Value n))
+cuminEvalGeneral :: (Search.MonadSearch n) => CuMin.Exp -> CuMin.Module -> Core.StepIndex -> IO (n (DC.Value n))
 cuminEvalGeneral expr modContext idx = do
   let pexpr = CuMin.postProcessExp Set.empty expr
   void $ expectTypeable pexpr modContext
-  return $ CuMin.runEval (CuMin.eval pexpr) modContext idx
+  return $ Core.runEval (DC.eval pexpr) modContext idx
 
-saltEvalGeneral :: (Search.MonadSearch n) => SaLT.Exp -> SaLT.Module -> Core.StepIndex -> IO (SaLT.Value n)
+saltEvalGeneral :: (Search.MonadSearch n) => SaLT.Exp -> SaLT.Module -> Core.StepIndex -> IO (DS.Value n)
 saltEvalGeneral expr modContext idx = do
   let pexpr = SaLT.postProcessExp Set.empty expr
   void $ expectTypeable pexpr modContext
-  return $ SaLT.runEval (SaLT.eval pexpr) modContext idx
+  return $ DS.runEval (DS.eval pexpr) modContext idx
 
+-- | Expects that the result of the evaluation is equivalent to the given set of values.
+shouldEvalTo :: (Search.MonadSearch n, Search.Observable n, ExpectEvaluation expr bnd)
+    => Proxy n -> FL.CoreModule bnd -> Core.StepIndex
+    -> expr -> (Ret expr n -> Maybe PP.Doc) -> Expectation
+shouldEvalTo monadProxy modContext stepIdx expr retPredicate = do
+  actual <- expectEval expr modContext stepIdx monadProxy
+  case retPredicate actual of
+    Nothing -> return ()
+    Just failure -> expectationFailure $ show failure
+
+-- | Casts the underlying non-determinism monad as long as it is not used inside the value (by VFun).
+castValue :: DC.Value n -> Maybe (DC.Value m)
+castValue (DC.VCon x y z) = DC.VCon x <$> mapM castValue y <*> pure z
+castValue (DC.VBot s) = Just $ DC.VBot s
+castValue (DC.VNat n) = Just $ DC.VNat n
+castValue (DC.VFun _ _) = Nothing
