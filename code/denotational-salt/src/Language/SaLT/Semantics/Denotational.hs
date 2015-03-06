@@ -184,7 +184,7 @@ eval (SaLT.ECase scrut alts) = do
 eval (SaLT.EFun fun tyargs) = do
   curStepIdx <- view Core.stepIdx
   if Core.isZero curStepIdx
-    then return $ VBot $ "maximum number of steps exceeded when calling " ++ fun
+    then return $  VBot $ "maximum number of steps exceeded when calling " ++ fun
     else do
       (SaLT.Binding _ body (SaLT.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . SaLT.modBinds . at fun . to fromJust
       -- evaluate type environment
@@ -251,8 +251,8 @@ primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Searc
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error: "
-primBind (VBot s) _ = VBot s
-primBind _ (VBot s) = VBot s
+primBind _ (VBot s) = mkSet $ return $ VBot s
+primBind (VBot s) _ = mkSet $ return $ VBot s
 primBind _ _ = error ">>= : wrong arguments"
 
 -- | Primitive equality operator which is built-in for naturals.
