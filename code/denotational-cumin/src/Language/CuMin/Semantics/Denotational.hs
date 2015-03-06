@@ -154,7 +154,13 @@ eval (CuMin.EFun fun tyargs) = do
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
       -- build nested lambda expression
       let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
-          mkEval vars = runReaderT (Core.decrementStep $! Core.bindVars vars $! Core.bindTyVars tyEnv $! eval body) curEnv
+          mkEval vars = runReaderT (eval body) Core.EvalEnv
+            { Core._termEnv   = vars
+            , Core._typeEnv   = tyEnv
+            , Core._moduleEnv = curEnv ^. Core.moduleEnv
+            , Core._constrEnv = curEnv ^. Core.constrEnv
+            , Core._stepIdx   = Core.decrement $ curEnv ^. Core.stepIdx
+            }
       lift $! List.foldr mkLam mkEval args M.empty
 eval (CuMin.ECon con tyargs) = do
   (CuMin.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)

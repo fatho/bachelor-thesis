@@ -49,10 +49,10 @@ mergeModule newMod = do
   replMod <- use replModule
   case replMod `FL.importUnqualified` newMod of
     Left (ambADTs, ambBinds) ->
-      return $ StatusErr $ PP.red (PP.text "Ambigous names defined in") PP.<+> PP.text (newMod ^. FL.modName) PP.</>
+      return $ StatusErr $ PP.red (PP.text "Ambigous names defined in") PP.<+> PP.text (newMod ^. FL.modName) PP.<$>
         PP.indent 2 (
             PP.text "ADTs:" PP.<+> PP.encloseSep mempty mempty PP.comma (map PP.text $ M.keys ambADTs)
-            PP.</> PP.text "Bindings:" PP.<+> PP.encloseSep mempty mempty PP.comma (map PP.text $ M.keys ambBinds)
+            PP.<$> PP.text "Bindings:" PP.<+> PP.encloseSep mempty mempty PP.comma (map PP.text $ M.keys ambBinds)
           )
     Right merged -> do
       replModule .= merged
