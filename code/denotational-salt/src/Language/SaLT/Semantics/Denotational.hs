@@ -250,9 +250,12 @@ primBind :: (Search.MonadSearch n) => Value n -> Value n -> Value n
 primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Search.>>+ \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
-  _         -> error ">>= : type error: "
+  _         -> error ">>= : type error 1"
 primBind _ (VBot s) = mkSet $ return $ VBot s
-primBind (VBot s) _ = mkSet $ return $ VBot s
+primBind (VBot s) (VFun f _) = mkSet $ case f $ VBot s of
+  VSet rs _ -> rs
+  VBot v    -> return $ VBot v
+  _         -> error ">>= : type error 2"
 primBind _ _ = error ">>= : wrong arguments"
 
 -- | Primitive equality operator which is built-in for naturals.
