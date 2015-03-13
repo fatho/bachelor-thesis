@@ -16,6 +16,7 @@ module Language.CuMin.Semantics.Denotational
   ) where
 
 import           Control.Applicative
+import           Control.Arrow                   ((&&&))
 import           Control.Lens                    hiding (each)
 import qualified Control.Monad.Logic             as Logic
 import           Control.Monad.Reader
@@ -32,7 +33,7 @@ import qualified FunLogic.Semantics.PartialOrder as PO
 import qualified FunLogic.Semantics.Pruning      as Pruning
 import qualified FunLogic.Semantics.Search       as Search
 
-import qualified FunLogic.Core.Pretty            as FL
+import qualified FunLogic.Core                   as FL
 import qualified Language.CuMin.AST              as CuMin
 
 -- | A CuMin value, parameterized over a non-deterministic Monad n.
@@ -151,7 +152,7 @@ eval (CuMin.EFun fun tyargs) = do
       -- extract environment use inside of the function value
       curEnv <- ask
       -- construct type environment for function evaluation
-      let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
+      let tyEnv = fmap (flip runReaderT curEnv . Core.anything &&& id) $ M.fromList $ zip tyvars tyargs
       -- build nested lambda expression
       let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
           mkEval vars = runReaderT (eval body) Core.EvalEnv
@@ -164,8 +165,11 @@ eval (CuMin.EFun fun tyargs) = do
       lift $! List.foldr mkLam mkEval args M.empty
 eval (CuMin.ECon con tyargs) = do
   (CuMin.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
+  tyEnv <- view Core.typeEnv
+  let tySubst v = views (at v) (maybe (FL.TVar v) snd) tyEnv
+  let tyInst = map (FL.foldType FL.TCon tySubst) tyargs
   let mkLam _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
-      mkCon _     dxs = VCon con (dxs []) tyargs
+      mkCon _     dxs = VCon con (dxs []) tyInst
   return $! CuMin.foldFunctionType mkLam mkCon rawType id
 
 -- the following cases need fair choice:
