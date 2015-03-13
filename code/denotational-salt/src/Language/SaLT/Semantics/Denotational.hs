@@ -20,6 +20,7 @@ module Language.SaLT.Semantics.Denotational
   ) where
 
 import           Control.Applicative
+import           Control.Arrow                   ((&&&))
 import           Control.Lens                    hiding (each)
 import           Control.Monad.Reader
 import qualified Data.List                       as List
@@ -35,8 +36,8 @@ import qualified FunLogic.Semantics.PartialOrder as PO
 import qualified FunLogic.Semantics.Pruning      as Pruning
 import qualified FunLogic.Semantics.Search       as Search
 
-import qualified FunLogic.Core.Pretty            as FL
-import qualified Language.SaLT.AST               as SaLT
+import qualified FunLogic.Core                   as FL
+import qualified Language.SaLT                   as SaLT
 
 -- | A SaLT value, parameterized over a non-deterministic Monad n.
 data Value n
@@ -189,13 +190,16 @@ eval (SaLT.EFun fun tyargs) = do
       (SaLT.Binding _ body (SaLT.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . SaLT.modBinds . at fun . to fromJust
       -- evaluate type environment
       curEnv <- ask
-      let tyEnv = fmap (flip runReaderT curEnv . Core.anything) $ M.fromList $ zip tyvars tyargs
+      let tyEnv = fmap (flip runReaderT curEnv . Core.anything &&& id) $ M.fromList $ zip tyvars tyargs
       -- evaluate body
       Core.decrementStep $ Core.bindTyVars tyEnv $ eval body
 eval (SaLT.ECon con tys) = do
   (SaLT.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
+  tyEnv <- view Core.typeEnv
+  let tySubst v = views (at v) (maybe (FL.TVar v) snd) tyEnv
+  let tyInst = map (FL.foldType FL.TCon tySubst) tys
   let f _ rst dxs = mkFun $ \x -> rst (dxs . (x:))
-      g _     dxs = VCon con (dxs []) tys
+      g _     dxs = VCon con (dxs []) tyInst
   return $ SaLT.foldFunctionType f g rawType id
 eval (SaLT.ELam argName _ body) = do
   curEnv <- ask
