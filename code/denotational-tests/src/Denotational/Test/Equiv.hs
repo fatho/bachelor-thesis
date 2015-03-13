@@ -14,7 +14,7 @@ import qualified FunLogic.Semantics.PartialOrder       as PO
 import qualified FunLogic.Semantics.Search             as Search
 import           Language.CuMin                        as CuMin
 import           Language.CuMin.Semantics.Denotational as DC
-import qualified Language.CuminToSalt.Translation      as C2S
+import qualified Language.CuminToSalt                  as C2S
 import qualified Language.CuminToSalt.Util             as C2S
 import           Language.SaLT                         as SaLT
 import           Language.SaLT.Semantics.Denotational  as DS
@@ -49,7 +49,7 @@ spec = do
   testModCuMin <- runIO $ fmap snd <$> CuMin.loadAndCheckCuMin CuMin.preludeModule "files/EquivTests.cumin" >>= \case
       Left err -> fail $ show $ PP.plain err
       Right mod' -> return mod'
-  let testModSalt = C2S.cuminToSalt testModCuMin
+  let testModSalt = C2S.cuminToSalt False testModCuMin
   -- check if the resulting SaLT program is indeed correct
   either (fail . show . PP.plain . PP.pretty) (const $ return ())
     $ SaLT.evalTC' (SaLT.checkModule testModSalt)

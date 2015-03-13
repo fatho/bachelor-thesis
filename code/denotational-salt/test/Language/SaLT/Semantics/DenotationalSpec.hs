@@ -74,7 +74,7 @@ dfsResults expr = do
   let pexpr = SaLT.postProcessExp mempty expr
   hasValidType pexpr
   return (SaLT.runEval (SaLT.eval pexpr)
-                   SaLT.preludeModule (SaLT.StepNatural 10)
+                   SaLT.preludeModule (SaLT.StepNatural 10) id
      :: SaLT.Value (Search.UnFair Logic.Logic))
 
 -- | Expects that the result of the evaluation is equivalent to the given set of values.

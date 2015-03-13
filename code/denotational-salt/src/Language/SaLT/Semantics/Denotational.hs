@@ -13,10 +13,12 @@ module Language.SaLT.Semantics.Denotational
     Value (..), boolValue, prettyValue, mkSet
   -- * SaLT interpreter
   , EvalExp, eval, runEval, unknown, mapValueSet
+  , EvalEnv, Core.stepIdx, Core.termEnv, Core.typeEnv, Core.moduleEnv, Core.constrEnv
   -- * step indices
-  , Core.StepIndex (..)
+  , Core.StepIndex (..), Core.isZero, Core.decrement
   -- * further core types
   , Search.MonadSearch
+  , Core.PruningF
   ) where
 
 import           Control.Applicative
@@ -146,9 +148,9 @@ type EvalEnv = Core.EvalEnv SaLT.Binding Value
 type EvalExp n = ReaderT (EvalEnv n) Identity
 
 -- | Run Eval computations.
-runEval :: EvalExp n a -> SaLT.Module -> Core.StepIndex -> a
-runEval action context stepMax = runReader action env where
-  env = Core.EvalEnv M.empty M.empty context cns stepMax
+runEval :: EvalExp n a -> SaLT.Module -> Core.StepIndex -> Core.PruningF n Value -> a
+runEval action context stepMax prune = runReader action env where
+  env = Core.EvalEnv M.empty M.empty context cns stepMax prune
   cns = context ^. SaLT.modADTs . traverse . to SaLT.adtConstructorTypes
 
 -- | Returns all possible inhabitants of a type as a set.
@@ -241,26 +243,25 @@ matches _ (SaLT.Alt (SaLT.PVar _) _) = True
 matches cname (SaLT.Alt (SaLT.PCon pname _) _) = cname == pname
 
 evalPrim :: (Search.MonadSearch n) => SaLT.PrimOp -> [Value n] -> EvalExp n (Value n)
-evalPrim prim [x,y] = return $ primOp prim x y
+evalPrim SaLT.PrimAdd  [x,y] = return $ primAdd x y
+evalPrim SaLT.PrimEq   [x,y] = return $ primEq x y
+evalPrim SaLT.PrimBind [x,y] = do
+  prune <- view Core.pruningImpl
+  return $ primBind prune x y
 evalPrim _ _        = error "evalPrim: invalid number of arguments for primitive operation"
 
-primOp :: (Search.MonadSearch n) => SaLT.PrimOp -> Value n -> Value n -> Value n
-primOp SaLT.PrimAdd  = primAdd
-primOp SaLT.PrimEq   = primEq
-primOp SaLT.PrimBind = primBind
-
 -- | Primitve monadic bind on sets. Uses fair conjunction.
-primBind :: (Search.MonadSearch n) => Value n -> Value n -> Value n
-primBind (VSet vs _) (VFun f _) = mkSet $ Pruning.pruneNonMaximalN 20 $ vs Search.>>+ \val -> case f val of
+primBind :: (Search.MonadSearch n) => Core.PruningF n Value -> Value n -> Value n -> Value n
+primBind prune (VSet vs _) (VFun f _) = mkSet $ prune $ vs Search.>>+ \val -> case f val of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error 1"
-primBind _ (VBot s) = mkSet $ return $ VBot s
-primBind (VBot s) (VFun f _) = mkSet $ case f $ VBot s of
+primBind _ _ (VBot s) = mkSet $ return $ VBot s
+primBind _ (VBot s) (VFun f _) = mkSet $ case f $ VBot s of
   VSet rs _ -> rs
   VBot v    -> return $ VBot v
   _         -> error ">>= : type error 2"
-primBind _ _ = error ">>= : wrong arguments"
+primBind _ _ _ = error ">>= : wrong arguments"
 
 -- | Primitive equality operator which is built-in for naturals.
 primEq :: Value n -> Value n -> Value n
