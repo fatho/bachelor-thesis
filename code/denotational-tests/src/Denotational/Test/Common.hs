@@ -97,13 +97,13 @@ cuminEvalGeneral :: (Search.MonadSearch n) => CuMin.Exp -> CuMin.Module -> Core.
 cuminEvalGeneral expr modContext idx = do
   let pexpr = CuMin.postProcessExp Set.empty expr
   void $ expectTypeable pexpr modContext
-  return $ Core.runEval (DC.eval pexpr) modContext idx
+  return $ Core.runEval (DC.eval pexpr) modContext idx id
 
 saltEvalGeneral :: (Search.MonadSearch n) => SaLT.Exp -> SaLT.Module -> Core.StepIndex -> IO (DS.Value n)
 saltEvalGeneral expr modContext idx = do
   let pexpr = SaLT.postProcessExp Set.empty expr
   void $ expectTypeable pexpr modContext
-  return $ DS.runEval (DS.eval pexpr) modContext idx
+  return $ DS.runEval (DS.eval pexpr) modContext idx id
 
 -- | Expects that the result of the evaluation is equivalent to the given set of values.
 shouldEvalTo :: (Search.MonadSearch n, Search.Observable n, ExpectEvaluation expr bnd)

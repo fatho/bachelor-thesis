@@ -143,14 +143,20 @@ builtinProperties =
             PP.<$> PP.text "'inf'   for an unlimited evaluation depth" ) )
     , mkProperty "numresults" replResultsPerStep (fromInteger <$> natural)
         (PP.text "The number of results in a set to be displayed at once.")
-    , mkProperty "strategy" replEvalStrategy (parseAbbrev show [BFS, DFS])
+    , mkProperty "strategy" replEvalStrategy (parseAbbrev show [BFS, DFS, IterDFS])
         (PP.text "The evaluation strategy, either breadth-first (BFS) or depth-first (DFS).")
     , mkProperty "showtypes" replDisplayTypes (parseAbbrev yesNo [False, True])
         (PP.text "If value is 'yes', constructors are displayed with the corresponding type annotations.")
+    , mkProperty "pruning" replPruning (parseAbbrev pruningStr [PruneNonMaximal, PruneDuplicates, PruneNone])
+        (PP.text "The pruning strategy.")
     ]
     where
       yesNo True = "yes"
       yesNo False = "no"
+
+      pruningStr PruneNonMaximal = "nonmaximal"
+      pruningStr PruneDuplicates = "duplicates"
+      pruningStr PruneNone       = "none"
 
 -- | Creates a property description from a lens into the 'ReplState' and a parser.
 mkProperty :: (MonadState (ReplState tag) m, Functor m, PP.Pretty a)

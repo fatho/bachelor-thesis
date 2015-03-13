@@ -9,10 +9,12 @@ module Language.CuMin.Semantics.Denotational
     Value (..), boolValue, prettyValue
   -- * CuMin interpreter
   , Eval, eval, Core.runEval, Core.anything
+  , EvalEnv, Core.stepIdx, Core.termEnv, Core.typeEnv, Core.moduleEnv, Core.constrEnv
   -- * step indices
-  , Core.StepIndex (..)
+  , Core.StepIndex (..), Core.isZero, Core.decrement
   -- * further core types
   , Search.MonadSearch
+  , Core.PruningF
   ) where
 
 import           Control.Applicative
@@ -123,8 +125,8 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval n = ReaderT (EvalEnv n) n
 
-prune :: (Search.MonadSearch n, PO.PartialOrd a) => Eval n a -> Eval n a
-prune = Pruning.pruneNonMaximalN 20
+prune :: (Search.MonadSearch n) => Eval n (Value n) -> Eval n (Value n)
+prune a = view Core.pruningImpl >>= flip mapReaderT a
 
 -- * This specializations brought a slight performance gain, as those types are the only ones used by the REPL.
 {-# SPECIALIZE Core.anything :: CuMin.Type -> Eval Logic.Logic (Value Logic.Logic) #-}
@@ -155,11 +157,9 @@ eval (CuMin.EFun fun tyargs) = do
       let tyEnv = fmap (flip runReaderT curEnv . Core.anything &&& id) $ M.fromList $ zip tyvars tyargs
       -- build nested lambda expression
       let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
-          mkEval vars = runReaderT (eval body) Core.EvalEnv
+          mkEval vars = runReaderT (eval body) curEnv
             { Core._termEnv   = vars
             , Core._typeEnv   = tyEnv
-            , Core._moduleEnv = curEnv ^. Core.moduleEnv
-            , Core._constrEnv = curEnv ^. Core.constrEnv
             , Core._stepIdx   = Core.decrement $ curEnv ^. Core.stepIdx
             }
       lift $! List.foldr mkLam mkEval args M.empty

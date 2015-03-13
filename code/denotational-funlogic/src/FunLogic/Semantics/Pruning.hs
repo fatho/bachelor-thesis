@@ -3,12 +3,21 @@ module FunLogic.Semantics.Pruning where
 
 import           Control.Applicative
 import           Control.Monad
+import qualified Data.Set as S
 
 import qualified FunLogic.Semantics.PartialOrder as PO
 import qualified FunLogic.Semantics.Search       as Search
 
+-- | Removes duplicate values from a monadic computation.
+pruneDuplicates :: (Ord a, Search.MonadSearch m) => m a -> m a
+pruneDuplicates = go S.empty where
+  go vals comp = Search.peek comp >>= \case
+    Nothing -> mzero
+    Just (v,rest)
+      | v `S.member` vals -> go vals rest
+      | otherwise         -> return v <|> go (S.insert v vals) rest
+
 -- | Removes a value from the monadic computation, if a larger value has already been returned.
--- This function allows to except some values from the maximality check.
 pruneNonMaximal :: (PO.PartialOrd a, Search.MonadSearch m) => m a -> m a
 {-# INLINABLE pruneNonMaximal #-}
 pruneNonMaximal = pruneNonMaximal' id

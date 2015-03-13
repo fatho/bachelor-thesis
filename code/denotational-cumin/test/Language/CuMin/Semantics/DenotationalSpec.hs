@@ -70,7 +70,7 @@ dfsResults expr = do
   hasValidType pexpr
   return $ Search.observeAll
     (CuMin.runEval (CuMin.eval pexpr)
-                   CuMin.preludeModule (CuMin.StepNatural 10)
+                   CuMin.preludeModule (CuMin.StepNatural 10) id
      :: Search.UnFair Logic.Logic (CuMin.Value (Search.UnFair Logic.Logic)))
 
 -- | Expects that the result of the evaluation is equivalent to the given set of values.

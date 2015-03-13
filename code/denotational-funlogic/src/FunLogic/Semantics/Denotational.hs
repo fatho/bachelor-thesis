@@ -16,6 +16,7 @@ module FunLogic.Semantics.Denotational
     Search.MonadSearch
   , Value (..)
   , StepIndex (..)
+  , PruningF
   , decrement, isZero
   -- * Interpreter Environment
   , EvalEnv (..)
@@ -24,6 +25,7 @@ module FunLogic.Semantics.Denotational
   , moduleEnv
   , constrEnv
   , stepIdx
+  , pruningImpl
   -- * Interpreter Interface
   , runEval
   , decrementStep
@@ -90,17 +92,21 @@ data EvalEnv bnd val nd
   -- ^ a map of data constructors with their respective types, derived from _moduleEnv.
   , _stepIdx   :: StepIndex
   -- ^ the current step index
+  , _pruningImpl :: PruningF nd val
+  -- ^ the pruning function
   }
 
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval bnd val n = ReaderT (EvalEnv bnd val n) n
 
+type PruningF n val = n (val n) -> n (val n)
+
 makeLenses ''EvalEnv
 
 -- | Run Eval computations.
-runEval :: Eval bnd val n a -> FL.CoreModule bnd -> StepIndex -> n a
-runEval action context stepMax = runReaderT action env where
-  env = EvalEnv M.empty M.empty context cns stepMax
+runEval :: Eval bnd val n a -> FL.CoreModule bnd -> StepIndex -> PruningF n val -> n a
+runEval action context stepMax prune = runReaderT action env where
+  env = EvalEnv M.empty M.empty context cns stepMax prune
   cns = context ^. FL.modADTs . traverse . to FL.adtConstructorTypes
 
 -- | Decrements the step index by one in the action passed as argument

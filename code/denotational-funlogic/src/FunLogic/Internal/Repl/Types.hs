@@ -28,6 +28,7 @@ module FunLogic.Internal.Repl.Types
   , ReplState (..)
   , ReplEnv (..)
   , Strategy (..)
+  , Pruning (..)
   -- * Lenses for ReplState
   , replModule
   , replFiles
@@ -37,6 +38,7 @@ module FunLogic.Internal.Repl.Types
   , replResultsPerStep
   , replEvalStrategy
   , replDisplayTypes
+  , replPruning
   -- * Lenses for ReplEnv
   , replPrelude
   , replLoader
@@ -100,10 +102,18 @@ data CmdLineOpt
 type Command tag = ReplInputM tag LoopAction
 
 -- | Evaluation strategy for the denotational semantics.
-data Strategy = DFS | BFS deriving (Show, Eq, Enum, Bounded)
+data Strategy = DFS | BFS | IterDFS deriving (Show, Eq, Enum, Bounded)
+
+-- | Pruning strategy.
+data Pruning = PruneNonMaximal | PruneDuplicates | PruneNone deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance PP.Pretty Strategy where
   pretty = PP.text . show
+
+instance PP.Pretty Pruning where
+  pretty PruneNonMaximal = PP.text "nonmaximal"
+  pretty PruneDuplicates = PP.text "duplicates"
+  pretty PruneNone       = PP.text "none"
 
 -- | Command parser with usage information
 data CommandDesc tag = CommandDesc
@@ -157,6 +167,8 @@ data ReplState tag
   -- ^ The evaluation strategy to use for the denotational semantics.
   , _replDisplayTypes   :: Bool
   -- ^ Controls whether constructors should be displayed with type annotations or not.
+  , _replPruning        :: Pruning
+  -- ^ Controls the pruning strategy.
   }
 
 -- | Environment of the REPL, passed from outside.

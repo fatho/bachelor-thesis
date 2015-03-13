@@ -16,6 +16,7 @@ import           Control.Lens
 import qualified Control.Monad.Logic                   as Logic
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
+import           Control.Monad.Reader
 import           Data.Default.Class
 import qualified Data.Set                              as Set
 import qualified System.Console.GetOpt                 as GetOpt
@@ -116,13 +117,27 @@ type BFSMonad = Logic.Logic
 -- | Wrapper for any evaluation with observable results.
 data ObservableSet = forall m. (Search.Observable m) => ObservableSet (m (Denot.Value m))
 
+iterDeep :: MonadPlus m => Denot.Eval m (Denot.Value m) -> Denot.StepIndex -> Denot.Eval m (Denot.Value m)
+iterDeep action = go 1 where
+  go idx stop
+   | Denot.isZero stop = mzero
+   | otherwise   = local (Denot.stepIdx .~ Denot.StepNatural idx) action `mplus` go (idx + 1) (Denot.decrement stop)
+
 -- | Evaluates a SaLT expression using the given strategy.
 evalWithStrategy
           :: Repl.Strategy
           -> (forall m. (Search.MonadSearch m) => Denot.Eval m (Denot.Value m) )
+          -> (forall m. (Search.MonadSearch m) => Denot.PruningF m Denot.Value )
           -> CuMin.Module -> Denot.StepIndex -> ObservableSet
-evalWithStrategy Repl.DFS action modul idx = ObservableSet (Denot.runEval action modul idx :: DFSMonad (Denot.Value DFSMonad))
-evalWithStrategy Repl.BFS action modul idx = ObservableSet (Denot.runEval action modul idx :: BFSMonad (Denot.Value BFSMonad))
+evalWithStrategy Repl.DFS action prune modul idx = ObservableSet (Denot.runEval action modul idx prune :: DFSMonad (Denot.Value DFSMonad))
+evalWithStrategy Repl.BFS action prune modul idx = ObservableSet (Denot.runEval action modul idx prune :: BFSMonad (Denot.Value BFSMonad))
+evalWithStrategy Repl.IterDFS action prune modul idx =
+    ObservableSet (Denot.runEval (Pruning.pruneDuplicates $ iterDeep action idx) modul idx prune :: BFSMonad (Denot.Value BFSMonad))
+
+pruneOf :: Search.MonadSearch n => Repl.Pruning -> Denot.PruningF n Denot.Value
+pruneOf Repl.PruneNonMaximal = Pruning.pruneNonMaximal
+pruneOf Repl.PruneDuplicates = Pruning.pruneDuplicates
+pruneOf Repl.PruneNone       = id
 
 -- | implements evaluation command
 doEvaluate :: CuMin.Exp -> Repl.Command CuMinRepl
@@ -133,9 +148,16 @@ doEvaluate expr = Repl.alwaysContinue $
       interactiveMod <- use Repl.replModule
       strategy       <- use Repl.replEvalStrategy
       stepIndex      <- use Repl.replStepMode
+      pruning        <- use Repl.replPruning
       startTime      <- liftIO getCPUTime
-      case evalWithStrategy strategy (Denot.eval expr) interactiveMod stepIndex of
-        ObservableSet resultSet -> displayResults $ Search.observeAll resultSet
+      Repl.runInterruptible (
+        case evalWithStrategy strategy (Denot.eval expr) (pruneOf pruning) interactiveMod stepIndex of
+            ObservableSet resultSet -> displayResults $ Search.observeAll resultSet
+        )
+        (return ())
+      printElapsed startTime
+  where
+    printElapsed startTime = do
       endTime        <- liftIO getCPUTime
       let elapsed = realToFrac (endTime - startTime) / 1000000000000 :: Double
       Repl.putDocLn $ PP.text "CPU time elapsed:" PP.<+> PP.dullyellow (PP.text $ printf "%.3f s" elapsed)

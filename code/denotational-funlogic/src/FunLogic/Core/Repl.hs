@@ -8,6 +8,7 @@
 {-# LANGUAGE UndecidableInstances      #-}
 module FunLogic.Core.Repl
   ( runRepl
+  , Internal.runInterruptible
   -- * REPL environment
   , Internal.ReplEnv (..)
   , Internal.replPrelude
@@ -21,6 +22,7 @@ module FunLogic.Core.Repl
   , Internal.ReplState (..)
   , Denot.StepIndex (..)
   , Internal.Strategy (..)
+  , Internal.Pruning (..)
   , Internal.replModule
   , Internal.replFiles
   , Internal.replCustomState
@@ -29,6 +31,7 @@ module FunLogic.Core.Repl
   , Internal.replResultsPerStep
   , Internal.replEvalStrategy
   , Internal.replDisplayTypes
+  , Internal.replPruning
   -- * Type families
   , Internal.TagBinding
   , Internal.TagState
@@ -79,6 +82,7 @@ buildInitialState env cs = ReplState
   , _replResultsPerStep = 10
   , _replEvalStrategy   = BFS
   , _replDisplayTypes   = False
+  , _replPruning        = PruneNone
   }
 
 -- | Start the REPL.

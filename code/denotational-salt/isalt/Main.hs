@@ -18,6 +18,7 @@ import           Control.Lens
 import qualified Control.Monad.Logic                  as Logic
 import           Control.Monad.State.Strict
 import           Control.Monad.Trans.Either
+import           Control.Monad.Reader
 import           Data.Char                            (toLower)
 import           Data.Default.Class
 import qualified Data.Set                             as Set
@@ -29,6 +30,7 @@ import           Text.Printf                          (printf)
 import           Text.Trifecta
 
 import qualified FunLogic.Core.Repl                   as Repl
+import qualified FunLogic.Semantics.Pruning           as Pruning
 import qualified FunLogic.Semantics.Search            as Search
 import qualified Language.SaLT.Semantics.Denotational as Denot
 
@@ -133,29 +135,54 @@ type BFSMonad = Logic.Logic
 -- | A value with observable results of non-determinism.
 data ObservableValue = forall m. (Search.Observable m) => ObservableValue (Denot.Value m)
 
+iterDeep :: Search.MonadSearch m => Denot.EvalExp m (Denot.Value m) -> Denot.StepIndex -> Denot.EvalExp m (Denot.Value m)
+iterDeep action = go 1 where
+  go idx stop
+    | Denot.isZero stop = local (Denot.stepIdx .~ stop) action
+    | otherwise         = local (Denot.stepIdx .~ Denot.StepNatural idx) action >>= \case
+        Denot.VSet vs _ -> go (idx + 1) (Denot.decrement stop) >>= \case
+            Denot.VSet rest _ -> return $ Denot.mkSet $ vs `mplus` rest
+            _ -> error "not a set"
+        _ -> error "not a set"
 -- | Evaluates a SaLT expression using the given strategy.
 evalWithStrategy
           :: Repl.Strategy
           -> (forall m. (Search.MonadSearch m) => Denot.EvalExp m (Denot.Value m) )
+          -> (forall m. (Search.MonadSearch m) => Denot.PruningF m Denot.Value )
           -> SaLT.Module -> Denot.StepIndex -> ObservableValue
-evalWithStrategy Repl.DFS action modul idx = ObservableValue (Denot.runEval action modul idx :: Denot.Value DFSMonad)
-evalWithStrategy Repl.BFS action modul idx = ObservableValue (Denot.runEval action modul idx :: Denot.Value BFSMonad)
+evalWithStrategy Repl.DFS action prune modul idx = ObservableValue (Denot.runEval action modul idx prune :: Denot.Value DFSMonad)
+evalWithStrategy Repl.BFS action prune modul idx = ObservableValue (Denot.runEval action modul idx prune :: Denot.Value BFSMonad)
+evalWithStrategy Repl.IterDFS action prune modul idx =
+    ObservableValue (Denot.runEval (iterDeep action idx) modul idx prune :: Denot.Value BFSMonad)
+
+pruneOf :: Search.MonadSearch n => Repl.Pruning -> Denot.PruningF n Denot.Value
+pruneOf Repl.PruneNonMaximal = Pruning.pruneNonMaximal
+pruneOf Repl.PruneDuplicates = Pruning.pruneDuplicates
+pruneOf Repl.PruneNone       = id
+
+isSet :: SaLT.Type -> Bool
+isSet (SaLT.TCon "Set" _) = True
+isSet _ = False
 
 -- | implements evaluation command
 doEvaluate :: SaLT.Exp -> Repl.Command SaLTRepl
-doEvaluate expr = Repl.alwaysContinue $
+doEvaluate expr = Repl.alwaysContinue $ do
+  interactiveMod <- use Repl.replModule
+  strategy       <- use Repl.replEvalStrategy
+  stepIndex      <- use Repl.replStepMode
+  pruning        <- use Repl.replPruning
   checkInteractiveExpr expr >>= \case
     Left tyerr -> Repl.putDocLn $ PP.pretty tyerr
-    Right _   -> do
-      interactiveMod <- use Repl.replModule
-      strategy       <- use Repl.replEvalStrategy
-      stepIndex      <- use Repl.replStepMode
-      startTime      <- liftIO getCPUTime
-      case evalWithStrategy strategy (Denot.eval expr) interactiveMod stepIndex of
-        ObservableValue result -> displayValue 0 result
-      endTime        <- liftIO getCPUTime
-      let elapsed = realToFrac (endTime - startTime) / 1000000000000 :: Double
-      Repl.putDocLn $ PP.text "CPU time elapsed:" PP.<+> PP.dullyellow (PP.text $ printf "%.3f s" elapsed)
+    Right ty
+       | strategy == Repl.IterDFS && not (isSet ty) ->
+          Repl.putDocLn $ PP.red $ PP.text "Iterative deepening search is only available for set-typed values"
+       | otherwise -> do
+          startTime      <- liftIO getCPUTime
+          case evalWithStrategy strategy (Denot.eval expr) (pruneOf pruning) interactiveMod stepIndex of
+            ObservableValue result -> displayValue 0 result
+          endTime        <- liftIO getCPUTime
+          let elapsed = realToFrac (endTime - startTime) / 1000000000000 :: Double
+          Repl.putDocLn $ PP.text "CPU time elapsed:" PP.<+> PP.dullyellow (PP.text $ printf "%.3f s" elapsed)
 
 -- | SaLT specific REPL commands.
 saltReplCommands :: [Repl.CommandDesc SaLTRepl]
