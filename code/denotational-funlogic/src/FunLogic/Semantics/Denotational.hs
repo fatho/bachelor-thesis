@@ -99,6 +99,7 @@ data EvalEnv bnd val nd
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval bnd val n = ReaderT (EvalEnv bnd val n) n
 
+-- | Type of a pruning function taking a non-deterministic computation and returning a computation of the same type.
 type PruningF n val = n (val n) -> n (val n)
 
 makeLenses ''EvalEnv

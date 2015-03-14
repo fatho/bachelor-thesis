@@ -135,8 +135,8 @@ type BFSMonad = Logic.Logic
 -- | A value with observable results of non-determinism.
 data ObservableValue = forall m. (Search.Observable m) => ObservableValue (Denot.Value m)
 
-iterDeep :: Search.MonadSearch m => Denot.EvalExp m (Denot.Value m) -> Denot.StepIndex -> Denot.EvalExp m (Denot.Value m)
-iterDeep action = go 1 where
+iterDeep :: Search.MonadSearch m => Denot.EvalExp m (Denot.Value m) -> Denot.EvalExp m (Denot.Value m)
+iterDeep action = view Denot.stepIdx >>= go 1 where
   go idx stop
     | Denot.isZero stop = local (Denot.stepIdx .~ stop) action
     | otherwise         = local (Denot.stepIdx .~ Denot.StepNatural idx) action >>= \case
@@ -153,7 +153,7 @@ evalWithStrategy
 evalWithStrategy Repl.DFS action prune modul idx = ObservableValue (Denot.runEval action modul idx prune :: Denot.Value DFSMonad)
 evalWithStrategy Repl.BFS action prune modul idx = ObservableValue (Denot.runEval action modul idx prune :: Denot.Value BFSMonad)
 evalWithStrategy Repl.IterDFS action prune modul idx =
-    ObservableValue (Denot.runEval (iterDeep action idx) modul idx prune :: Denot.Value BFSMonad)
+    ObservableValue (Denot.runEval (iterDeep action idx) modul idx prune :: Denot.Value DFSMonad)
 
 pruneOf :: Search.MonadSearch n => Repl.Pruning -> Denot.PruningF n Denot.Value
 pruneOf Repl.PruneNonMaximal = Pruning.pruneNonMaximal
