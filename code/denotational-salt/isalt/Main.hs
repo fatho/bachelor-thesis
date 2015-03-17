@@ -153,7 +153,7 @@ evalWithStrategy
 evalWithStrategy Repl.DFS action prune modul idx = ObservableValue (Denot.runEval action modul idx prune :: Denot.Value DFSMonad)
 evalWithStrategy Repl.BFS action prune modul idx = ObservableValue (Denot.runEval action modul idx prune :: Denot.Value BFSMonad)
 evalWithStrategy Repl.IterDFS action prune modul idx =
-    ObservableValue (Denot.runEval (iterDeep action idx) modul idx prune :: Denot.Value DFSMonad)
+    ObservableValue (Denot.runEval (iterDeep action) modul idx prune :: Denot.Value DFSMonad)
 
 pruneOf :: Search.MonadSearch n => Repl.Pruning -> Denot.PruningF n Denot.Value
 pruneOf Repl.PruneNonMaximal = Pruning.pruneNonMaximal
