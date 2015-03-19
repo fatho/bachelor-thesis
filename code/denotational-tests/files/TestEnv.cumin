@@ -1,0 +1,90 @@
+{- Peano Numbers -}
+
+data Peano = Z | S Peano
+
+addPeano :: Peano -> Peano -> Peano
+addPeano a b = case a of
+  Z -> b
+  S r -> S (addPeano r b)
+
+multPeano :: Peano -> Peano -> Peano
+multPeano m n = case n of
+  Z -> Z
+  S n' -> addPeano m (multPeano m n')
+
+peanoToNat :: Peano -> Nat
+peanoToNat p = case p of
+  Z -> 0
+  S r -> 1 + peanoToNat r
+
+cmpPeano :: Peano -> Peano -> Ordering
+cmpPeano m n = case m of
+  Z -> case n of
+    Z -> EQ
+    S n' -> LT
+  S m' -> case n of
+    Z -> GT
+    S n' -> cmpPeano m' n'
+
+{- Church Numerals -}
+
+churchZ :: forall a.(a -> a) -> a -> a
+churchZ f z = z
+
+churchS :: forall a.((a -> a) -> a -> a) -> (a -> a) -> a -> a
+churchS n f z = n f (f z)
+
+addChurch :: forall a.((a -> a) -> a -> a) -> ((a -> a) -> a -> a) -> (a -> a) -> a -> a
+addChurch m n f z = m f (n f z)
+
+multChurch :: forall a.((a -> a) -> a -> a) -> ((a -> a) -> a -> a) -> (a -> a) -> a -> a
+multChurch m n f z = m (n f) z
+
+churchToPeano :: ((Peano -> Peano) -> Peano -> Peano) -> Peano
+churchToPeano n = n S Z
+
+peanoToChurch :: forall a. Peano -> (a -> a) -> a -> a
+peanoToChurch n f z = case n of
+  Z -> z
+  S n' -> peanoToChurch<:a:> n' f (f z)
+
+{- Ordering and Comparisons -}
+
+data Ordering = LT | EQ | GT
+
+cmpNat :: Nat -> Nat -> Ordering
+cmpNat  n m = cmpNat' n m n m
+
+cmpNat' :: Nat -> Nat -> Nat -> Nat -> Ordering
+cmpNat' n m n' m' = case m == n' of
+  False -> case n == m' of
+    False -> cmpNat' n m (n' + 1) (m' + 1)
+    True  -> GT
+  True -> case n == m' of
+    False -> LT
+    True  -> EQ
+
+{- Sorting by Permutations -}
+
+insertAnywhere :: forall a.a -> [a] -> [a]
+insertAnywhere x xs = case xs of
+  Nil -> [x]<:a:>
+  Cons y ys -> choose<:List a:> (Cons<:a:> x xs) (Cons<:a:> y (insertAnywhere<:a:> x ys))
+
+
+isSorted :: forall a.(a -> a -> Ordering) -> [a] -> Bool
+isSorted cmp xs = case xs of
+  Nil -> True
+  Cons y ys -> isSorted'<:a:> cmp y ys
+
+isSorted' :: forall a.(a -> a -> Ordering) -> a -> [a] -> Bool
+isSorted' cmp pred xs = case xs of
+  Nil -> True
+  Cons y ys -> case cmp pred y of
+    GT -> False
+    o  -> isSorted'<:a:> cmp y ys
+
+permSort :: forall a. (a -> a -> Ordering) -> [a] -> [a]
+permSort cmp xs = let ys = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:> xs in guard<:List a:> (isSorted<:a:> cmp ys) ys
+
+
