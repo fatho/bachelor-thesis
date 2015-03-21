@@ -16,7 +16,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Denotational.Test.Common
+  exposed-modules:     Denotational.Test.Benchmark
+                       Denotational.Test.Common
                        Denotational.Test.Equiv
   other-modules:
   -- other-extensions:
@@ -41,6 +42,7 @@ library
                      , language-cumin
                      , language-salt
                      , cumin2salt
+                     , criterion
                      , hspec                ==1.12.*
                      , QuickCheck           ==2.7.*
                      , smallcheck           ==1.1.*
@@ -82,4 +84,34 @@ executable test-runner
                      , smallcheck           ==1.1.*
                      , hspec-smallcheck     ==0.3.*
   hs-source-dirs:      test-runner
+  default-language:    Haskell2010
+
+
+executable benchmark-runner
+  main-is:             Main.hs
+  -- other-modules:
+  -- other-extensions:
+  build-depends:       base                 ==4.7.*
+                     , text                 ==1.1.*
+                     , trifecta             ==1.4.*
+                     , lens                 ==4.4.*
+                     , mtl                  ==2.1.*
+                     , transformers         ==0.3.*
+                     , containers           ==0.5.*
+                     , unordered-containers ==0.2.*
+                     , ansi-wl-pprint       ==0.6.*
+                     , directory            ==1.2.*
+                     , filepath             ==1.3.*
+                     , logict               ==0.6.*
+                     , either               ==4.3.*
+                     , data-default-class
+                     , denotational-funlogic
+                     , denotational-cumin
+                     , denotational-salt
+                     , funlogic-core
+                     , language-cumin
+                     , language-salt
+                     , cumin2salt
+                     , denotational-tests
+  hs-source-dirs:      benchmark-runner
   default-language:    Haskell2010

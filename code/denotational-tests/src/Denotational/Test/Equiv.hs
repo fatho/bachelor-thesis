@@ -1,10 +1,10 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Denotational.Test.Equiv where
 
-import           Control.Applicative
 import           Control.Lens
+import           Control.Monad
 import qualified Data.List                             as List
-import           Data.Proxy
 import           Test.Hspec
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
 
@@ -43,23 +43,20 @@ cuminSaltEquiv cmod smod cexp sexp step = do
     Nothing -> fail "function value returned"
     Just cvalsD' -> PO.partiallyEqual cvalsD cvalsD' `shouldBe` True
 
+testModCumin :: CuMin.Module
+testModCumin = $(CuMin.moduleFromFileWithPrelude CuMin.preludeModule "files/EquivTests.cumin")
+
 -- | Performs the equivalence tests.
 spec :: Spec
 spec = do
-  testModCuMin <- runIO $ fmap snd <$> CuMin.loadAndCheckCuMin CuMin.preludeModule "files/EquivTests.cumin" >>= \case
-      Left err -> fail $ show $ PP.plain err
-      Right mod' -> return mod'
-  let testModSalt = C2S.cuminToSalt False testModCuMin
+  testModCuminPrelude <- either (fail . show) return $ CuMin.importUnqualified testModCumin CuMin.preludeModule
+  let testModSalt = C2S.cuminToSalt False testModCuminPrelude
   -- check if the resulting SaLT program is indeed correct
   either (fail . show . PP.plain . PP.pretty) (const $ return ())
     $ SaLT.evalTC' (SaLT.checkModule testModSalt)
 
-  describe "Equivalence tests" $
-    forOf_ (FL.modBinds . traverse . FL.bindingsByName (List.isPrefixOf "eqTest")) testModCuMin $ \cuminBnd -> do
-      let name = cuminBnd ^. FL.bindingName
-      it name $ case testModSalt ^. FL.modBinds . at name of
-        Nothing -> expectationFailure $ "SaLT translation does not contain " ++ name
-        Just saltBnd
-          | not $ null $ cuminBnd ^. CuMin.bindingArgs -> expectationFailure "equivalence test must not have arguments"
-          | otherwise -> cuminSaltEquiv testModCuMin testModSalt
-                (cuminBnd ^. FL.bindingExpr) (saltBnd ^. FL.bindingExpr) (DF.StepNatural 5)
+  bindings <- either fail return $ Common.testBindings "eqTest" testModCuminPrelude testModSalt
+
+  describe "Equivalence tests" $ forM_ bindings $ \(name, cuminBnd, saltBnd) -> it name $
+    cuminSaltEquiv testModCuminPrelude testModSalt
+        (cuminBnd ^. FL.bindingExpr) (saltBnd ^. FL.bindingExpr) (DF.StepNatural 5)

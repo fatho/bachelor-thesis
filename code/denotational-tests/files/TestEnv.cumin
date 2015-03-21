@@ -87,9 +87,13 @@ isSorted' cmp pred xs = case xs of
 permSort :: forall a. (a -> a -> Ordering) -> [a] -> [a]
 permSort cmp xs = let ys = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:> xs in guard<:List a:> (isSorted<:a:> cmp ys) ys
 
-
 {- Functions on Lists -}
 
 {- repeat only works with iterative deepening search when using unrestricted step index -}
 repeat :: forall a. a -> [a]
 repeat x = choose<:List a:> Nil<:a:> (Cons<:a:> x (repeat<:a:> x))
+
+{- Benchmarks -}
+
+benchSort :: List Nat
+benchSort = permSort<:Nat:> cmpNat [1,5,3,2,4]<:Nat:>

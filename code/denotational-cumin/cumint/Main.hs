@@ -117,12 +117,6 @@ type BFSMonad = Logic.Logic
 -- | Wrapper for any evaluation with observable results.
 data ObservableSet = forall m. (Search.Observable m) => ObservableSet (m (Denot.Value m))
 
-iterDeep :: MonadPlus m => Denot.Eval m (Denot.Value m) -> Denot.Eval m (Denot.Value m)
-iterDeep action = view Denot.stepIdx >>= go 1 where
-  go idx stop
-   | Denot.isZero stop = mzero
-   | otherwise   = local (Denot.stepIdx .~ Denot.StepNatural idx) action `mplus` go (idx + 1) (Denot.decrement stop)
-
 -- | Evaluates a SaLT expression using the given strategy.
 evalWithStrategy
           :: Repl.Strategy
@@ -132,7 +126,7 @@ evalWithStrategy
 evalWithStrategy Repl.DFS action prune modul idx = ObservableSet (Denot.runEval action modul idx prune :: DFSMonad (Denot.Value DFSMonad))
 evalWithStrategy Repl.BFS action prune modul idx = ObservableSet (Denot.runEval action modul idx prune :: BFSMonad (Denot.Value BFSMonad))
 evalWithStrategy Repl.IterDFS action prune modul idx =
-    ObservableSet (Denot.runEval (Pruning.pruneDuplicates $ iterDeep action) modul idx prune :: DFSMonad (Denot.Value DFSMonad))
+    ObservableSet (Denot.runEval (Pruning.pruneDuplicates $ Denot.iterDeep action) modul idx prune :: DFSMonad (Denot.Value DFSMonad))
 
 pruneOf :: Search.MonadSearch n => Repl.Pruning -> Denot.PruningF n Denot.Value
 pruneOf Repl.PruneNonMaximal = Pruning.pruneNonMaximal

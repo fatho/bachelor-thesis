@@ -8,7 +8,7 @@ module Language.CuMin.Semantics.Denotational
   ( -- * CuMin value type
     Value (..), boolValue, prettyValue
   -- * CuMin interpreter
-  , Eval, eval, Core.runEval, Core.anything
+  , Eval, eval, Core.runEval, Core.anything, iterDeep
   , EvalEnv, Core.stepIdx, Core.termEnv, Core.typeEnv, Core.moduleEnv, Core.constrEnv
   -- * step indices
   , Core.StepIndex (..), Core.isZero, Core.decrement
@@ -124,6 +124,14 @@ type EvalEnv = Core.EvalEnv CuMin.Binding Value
 
 -- | The evaluation monad is just a reader monad with the above environment.
 type Eval n = ReaderT (EvalEnv n) n
+
+-- | Performs iterative deepening search on a CuMin evaluation.
+iterDeep :: MonadPlus m => Eval m (Value m) -> Eval m (Value m)
+iterDeep action = view Core.stepIdx >>= go 1 where
+  go idx stop
+   | Core.isZero stop = mzero
+   | otherwise        = local (Core.stepIdx .~ Core.StepNatural idx) action `mplus` go (idx + 1) (Core.decrement stop)
+
 
 prune :: (Search.MonadSearch n) => Eval n (Value n) -> Eval n (Value n)
 prune a = view Core.pruningImpl >>= flip mapReaderT a
