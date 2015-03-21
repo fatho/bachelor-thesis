@@ -13,28 +13,25 @@ import qualified FunLogic.Semantics.Search             as Search
 import qualified Language.CuMin                        as CuMin
 import qualified Language.CuMin.Semantics.Denotational as DC
 import qualified Language.CuminToSalt                  as C2S
-import qualified Language.CuminToSalt.Util             as C2S
 import qualified Language.SaLT                         as SaLT
 import qualified Language.SaLT.Semantics.Denotational  as DS
 
 import qualified Denotational.Test.Common              as Common
 
+import           Control.Applicative
 import           Control.Lens
-import           Control.Monad
 import qualified Control.Monad.Logic                   as Logic
-import           Control.Monad.Reader
 import           Criterion.Main
 import qualified Data.List                             as List
-import           Data.Maybe
 import           Data.Proxy
+import qualified System.Environment                    as Env
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
 
--- | Checks if a SaLT value is total, i.e. contains no bottoms.
 containsBottomSalt :: DS.Value n -> Bool
 containsBottomSalt (DS.VBot _)        = True
 containsBottomSalt (DS.VFun _ _)      = False
 containsBottomSalt (DS.VNat _)        = False
-containsBottomSalt (DS.VSet _ _)      = False
+containsBottomSalt (DS.VSet _ _)      = error "cannot happen"
 containsBottomSalt (DS.VCon _ args _) = any containsBottomSalt args
 
 containsBottomCuMin :: DC.Value n -> Bool
@@ -43,6 +40,7 @@ containsBottomCuMin (DC.VFun _ _)      = False
 containsBottomCuMin (DC.VNat _)        = False
 containsBottomCuMin (DC.VCon _ args _) = any containsBottomCuMin args
 
+-- | CuMin module containing the benchmarks
 testModCumin :: CuMin.Module
 testModCumin = $(CuMin.moduleFromFileWithPrelude CuMin.preludeModule "files/TestEnv.cumin")
 
@@ -58,27 +56,35 @@ makeLenses ''BenchmarkEnv
 
 runBenchmark :: IO ()
 runBenchmark = do
+  -- merge prelude into benchmark module and translate to SaLT
   testModCuminPrelude <- either (fail . show) return $ CuMin.importUnqualified testModCumin CuMin.preludeModule
-  let testModSalt = C2S.cuminToSalt True testModCuminPrelude
+  let testModSalt = C2S.cuminToSalt False testModCuminPrelude
   -- check if the resulting SaLT program is indeed correct
   either (fail . show . PP.plain . PP.pretty) (const $ return ())
     $ SaLT.evalTC' (SaLT.checkModule testModSalt)
-
+  -- extract name of bindings
   bindings <- either fail return $ Common.testBindings "bench" testModCuminPrelude testModSalt
-
-  defaultMain $ mkBenchmarks $ map (mkEnv testModCuminPrelude testModSalt) bindings
+  -- split arguments into benchmark names and criterion parameters
+  (bnames, args) <- List.break (== "--") <$> Env.getArgs
+  if null bnames
+    then do
+      putStrLn "Available benchmarks: "
+      mapMOf_ (traverse._1) putStrLn bindings
+    else Env.withArgs (filter (/= "--") args)
+      $ defaultMain
+      $ map (mkBenchmarks . mkEnv testModCuminPrelude testModSalt)
+      $ filter (views _1 (`elem` bnames)) bindings
 
 mkEnv :: CuMin.Module -> SaLT.Module -> (FL.BindingName, CuMin.Binding, SaLT.Binding) -> BenchmarkEnv
 mkEnv cuminMod saltMod (name, cuminBnd, saltBnd) = BenchmarkEnv cuminMod saltMod name cuminBnd saltBnd
-
-data SomeProxy = forall n. (Search.Observable n, Search.MonadSearch n) => SomeProxy (Proxy n)
 
 data BenchSearch = SearchDFS | SearchBFS | SearchIter deriving (Eq, Ord, Enum, Bounded, Show)
 data BenchLanguage = LangCumin | LangSalt deriving (Eq, Ord, Enum, Bounded, Show)
 data BenchPruning = PruningNone | PruningNonMax | PruningDuplicates deriving (Eq, Ord, Enum, Bounded, Show)
 
-mkBenchmark :: BenchSearch -> BenchPruning -> BenchLanguage -> BenchmarkEnv -> Benchmark
-mkBenchmark s p l BenchmarkEnv {..} = bench "eval" $ withLang l where
+-- | Creates a single evaluation benchmark using the supplied configuration.
+evalBenchmark :: BenchSearch -> BenchPruning -> BenchLanguage -> BenchmarkEnv -> Benchmarkable
+evalBenchmark s p l BenchmarkEnv {..} = withLang l where
   withLang LangCumin = (case s of
         SearchDFS  -> benchmarkCumin dfsProxy (DC.eval cuminExp) (pruningFor p)
         SearchBFS  -> benchmarkCumin bfsProxy (DC.eval cuminExp) (pruningFor p)
@@ -97,24 +103,29 @@ mkBenchmark s p l BenchmarkEnv {..} = bench "eval" $ withLang l where
   pruningFor PruningNonMax     = Pruning.pruneNonMaximal
   pruningFor PruningDuplicates = Pruning.pruneDuplicates
 
-benchForEach :: Show a => [a] -> (a -> [Benchmark]) -> [Benchmark]
-benchForEach xs f = map go xs where
+-- creates a benchmark group for each item in the list named using the @Show@ instance.
+bgroupForEach :: Show a => [a] -> (a -> [Benchmark]) -> [Benchmark]
+bgroupForEach xs f = map go xs where
   go x = bgroup (show x) (f x)
 
-mkBenchmarks :: [BenchmarkEnv] -> [Benchmark]
-mkBenchmarks envs =
-  flip map envs $ \benv -> bgroup (view benchName benv) $
-    benchForEach [minBound..maxBound] $ \strategy ->
-      benchForEach [minBound..maxBound] $ \pruning ->
-        benchForEach [minBound..maxBound] $ \lang ->
-          map (mkBenchmark strategy pruning lang) envs
+-- | Create benchmarks for all possible configurations for a given environment.
+mkBenchmarks :: BenchmarkEnv -> Benchmark
+mkBenchmarks benv =
+  bgroup (view benchName benv) $
+    bgroupForEach [minBound..maxBound] $ \strategy ->
+      bgroupForEach [minBound..maxBound] $ \pruning ->
+        flip map [minBound..maxBound] $ \lang ->
+          bench (show lang) $ evalBenchmark strategy pruning lang benv
 
+-- | Proxy used to force LogicT as non-determinism monad
 bfsProxy :: Proxy Logic.Logic
 bfsProxy = Proxy
 
+-- | Proxy used to force unfair LogicT as non-determinism monad
 dfsProxy :: Proxy (Search.UnFair Logic.Logic)
 dfsProxy = Proxy
 
+-- | Benchmarks a CuMin evaluation by measuring the time needed to produce the first fully defined result.
 benchmarkCumin :: (Search.MonadSearch n, Search.Observable n)
     => Proxy n -> DC.Eval n (DC.Value n) -> DC.PruningF n DC.Value -> Core.StepIndex
     -> CuMin.Module -> Benchmarkable
@@ -122,6 +133,7 @@ benchmarkCumin _ action pruning stepIdx modul =
   whnf (List.find (not . containsBottomCuMin) . Search.observeAll)
     $ DC.runEval action modul stepIdx pruning
 
+-- | Benchmarks a SaLT evaluation by measuring the time needed to produce the first fully defined result.
 benchmarkSalt :: (Search.MonadSearch n, Search.Observable n)
     => Proxy n -> DS.EvalExp n (DS.Value n) -> DS.PruningF n DS.Value -> Core.StepIndex
     -> SaLT.Module -> Benchmarkable
