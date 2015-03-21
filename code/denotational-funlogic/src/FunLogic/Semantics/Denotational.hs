@@ -28,6 +28,7 @@ module FunLogic.Semantics.Denotational
   , pruningImpl
   -- * Interpreter Interface
   , runEval
+  , iterDeep
   , decrementStep
   , anything, anyConstructor, anyNatural
   , bindVar, bindVars, bindTyVars
@@ -109,6 +110,13 @@ runEval :: Eval bnd val n a -> FL.CoreModule bnd -> StepIndex -> PruningF n val 
 runEval action context stepMax prune = runReaderT action env where
   env = EvalEnv M.empty M.empty context cns stepMax prune
   cns = context ^. FL.modADTs . traverse . to FL.adtConstructorTypes
+
+-- | Performs iterative deepening search on a non-deterministic evaluation.
+iterDeep :: MonadPlus m => Eval bnd val m (val m) -> Eval bnd val m (val m)
+iterDeep action = view stepIdx >>= go 1 where
+  go idx stop
+   | isZero stop = mzero
+   | otherwise   = local (stepIdx .~ StepNatural idx) action `mplus` go (idx + 1) (decrement stop)
 
 -- | Decrements the step index by one in the action passed as argument
 decrementStep :: (MonadReader (EvalEnv bnd val n) m) => m a -> m a

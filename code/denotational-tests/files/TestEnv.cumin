@@ -7,6 +7,17 @@ addPeano a b = case a of
   Z -> b
   S r -> S (addPeano r b)
 
+subPeanoDet :: Peano -> Peano -> Peano
+subPeanoDet a b = case b of
+  Z -> a
+  S b' -> case a of
+    Z -> failed<:Peano:>
+    S a' -> subPeanoDet a' b'
+
+subPeanoFree :: Peano -> Peano -> Peano
+subPeanoFree a b = let d :: Peano free in
+  guard<:Peano:> (addPeano b d == a) d
+
 multPeano :: Peano -> Peano -> Peano
 multPeano m n = case n of
   Z -> Z
@@ -71,7 +82,6 @@ insertAnywhere x xs = case xs of
   Nil -> [x]<:a:>
   Cons y ys -> choose<:List a:> (Cons<:a:> x xs) (Cons<:a:> y (insertAnywhere<:a:> x ys))
 
-
 isSorted :: forall a.(a -> a -> Ordering) -> [a] -> Bool
 isSorted cmp xs = case xs of
   Nil -> True
@@ -84,8 +94,11 @@ isSorted' cmp pred xs = case xs of
     GT -> False
     o  -> isSorted'<:a:> cmp y ys
 
+permuted :: forall a. List a -> List a
+permuted = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:>
+
 permSort :: forall a. (a -> a -> Ordering) -> [a] -> [a]
-permSort cmp xs = let ys = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:> xs in guard<:List a:> (isSorted<:a:> cmp ys) ys
+permSort cmp xs = let ys = permuted<:a:> xs in guard<:List a:> (isSorted<:a:> cmp ys) ys
 
 {- Functions on Lists -}
 
@@ -93,7 +106,100 @@ permSort cmp xs = let ys = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:> xs in 
 repeat :: forall a. a -> [a]
 repeat x = choose<:List a:> Nil<:a:> (Cons<:a:> x (repeat<:a:> x))
 
+{- Einstein -}
+
+data House  = House Color Person Pet Smoke Drink
+
+data Person = Englishman | Spaniard | Ukrainian | Norwegian | Japanese
+data Pet    = Dog | Snails | Fox | Zebra | Horse
+data Color  = Red | Green | Ivory | Yellow | Blue
+data Smoke  = OldGold | Kool | Chesterfield | LuckyStrike | Parliament
+data Drink  = Milk | OrangeJuice | Tea | Coffee | Water
+
+data Success = Success
+
+at :: forall a. List a -> Peano -> a
+at xs n = case xs of
+  Nil -> failed<:a:>
+  Cons y ys -> case n of
+    Z -> y
+    S n' -> at<:a:> ys n'
+
+member :: forall a. Data a => a -> List a -> Bool
+member x xs = case xs of
+  Nil -> False
+  Cons y ys -> or (x == y) (member<:a:> x ys)
+
+all :: forall a. (a -> Bool) -> List a -> Bool
+all f xs = foldr<:Bool,Bool:> and True (map<:a,Bool:> f xs)
+
+houses :: List House -> Bool
+houses hs =
+  let h1 = at<:House:> hs Z in
+  let h3 = at<:House:> hs (S (S Z)) in
+  let hex = houseExists hs in
+  all<:House:> hex houseConstraints
+
+houseExists :: [House] -> House -> Bool
+houseExists hs h = member<:House:> h hs
+
+houseConstraints :: [House]
+houseConstraints =
+  [ House Red Englishman anything<:Pet:> anything<:Smoke:> anything<:Drink:>
+  , House anything<:Color:> Spaniard Dog anything<:Smoke:> anything<:Drink:>
+  , House Green anything<:Person:> anything<:Pet:> anything<:Smoke:> Coffee
+  , House anything<:Color:> Ukrainian anything<:Pet:> anything<:Smoke:> Tea
+  , House anything<:Color:> anything<:Person:> Snails OldGold anything<:Drink:>
+  , House Yellow anything<:Person:> anything<:Pet:> Kool anything<:Drink:>
+  , House anything<:Color:> anything<:Person:> anything<:Pet:> LuckyStrike OrangeJuice
+  , House anything<:Color:> Japanese anything<:Pet:> Parliament anything<:Drink:>
+  ]<:House:>
+
+puzzle :: [House]
+puzzle =
+  let h1 :: House free in
+  let h2 :: House free in
+  let h3 :: House free in
+  let h4 :: House free in
+  let h5 :: House free in
+  let hs = [h1,h2,h3,h4,h5]<:House:> in
+  guard<:List House:> (houses hs) hs
+
+anything :: forall a. Data a => a
+anything = let x :: a free in x
+
+{-
+There are five houses.
+
+The Englishman lives in the red house.
+The Spaniard owns the dog.
+Coffee is drunk in the green house.
+The Ukrainian drinks tea.
+The Old Gold smoker owns snails.
+Kools are smoked in the yellow house.
+The Lucky Strike smoker drinks orange juice.
+The Japanese smokes Parliaments.
+
+The green house is immediately to the right of the ivory house.
+The man who smokes Chesterfields lives in the house next to the man with the fox.
+Kools are smoked in the house next to the house where the horse is kept.
+The Norwegian lives next to the blue house.
+
+Milk is drunk in the middle house.
+The Norwegian lives in the first house.
+
+-}
+
 {- Benchmarks -}
+
+benchAddPeano :: Peano
+benchAddPeano = addPeano (S (S (S Z))) (S (S Z))
+
+benchSubPeanoDet :: Peano
+benchSubPeanoDet = subPeanoDet (S (S (S Z))) (S (S Z))
+
+benchSubPeanoFree :: Peano
+benchSubPeanoFree = subPeanoFree (S (S (S Z))) (S (S Z))
 
 benchSort :: List Nat
 benchSort = permSort<:Nat:> cmpNat [1,5,3,2,4]<:Nat:>
