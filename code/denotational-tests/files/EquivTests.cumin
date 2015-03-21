@@ -1,9 +1,6 @@
 caseFailure :: forall a.List a -> List a
 caseFailure  x = case x of { Nil -> failed<:List a:>; y -> y }
 
-guard :: forall a. Bool -> a -> a
-guard b x = case b of { False -> failed<:a:>; True -> x }
-
 minus :: Nat -> Nat -> Nat
 minus a b = let k :: Nat free in guard<:Nat:> (a == b + k) k
 

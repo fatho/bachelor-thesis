@@ -12,7 +12,7 @@ module Language.SaLT.Semantics.Denotational
   ( -- * SaLT value type
     Value (..), boolValue, prettyValue, mkSet
   -- * SaLT interpreter
-  , EvalExp, eval, runEval, unknown, mapValueSet
+  , EvalExp, eval, runEval, unknown, mapValueSet, iterDeep
   , EvalEnv, Core.stepIdx, Core.termEnv, Core.typeEnv, Core.moduleEnv, Core.constrEnv
   -- * step indices
   , Core.StepIndex (..), Core.isZero, Core.decrement
@@ -146,6 +146,17 @@ type EvalEnv = Core.EvalEnv SaLT.Binding Value
 
 -- | Evaluation monad with explicit non-determinism via 'VSet' (Value)
 type EvalExp n = ReaderT (EvalEnv n) Identity
+
+-- | Performs iterative deepening search on a set typed SaLT computation.
+iterDeep :: (Applicative m, MonadPlus m) => EvalExp m (Value m) -> EvalExp m (Value m)
+iterDeep action = view Core.stepIdx >>= go 1 where
+  go idx stop
+    | Core.isZero stop  = local (Core.stepIdx .~ stop) action
+    | otherwise         = local (Core.stepIdx .~ Core.StepNatural idx) action >>= \case
+        VSet vs _ -> go (idx + 1) (Core.decrement stop) >>= \case
+            VSet rest _ -> return $ mkSet $ vs `mplus` rest
+            _ -> error "not a set"
+        _ -> error "not a set"
 
 -- | Run Eval computations.
 runEval :: EvalExp n a -> SaLT.Module -> Core.StepIndex -> Core.PruningF n Value -> a

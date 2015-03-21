@@ -121,3 +121,15 @@ castValue (DC.VCon x y z) = DC.VCon x <$> mapM castValue y <*> pure z
 castValue (DC.VBot s) = Just $ DC.VBot s
 castValue (DC.VNat n) = Just $ DC.VNat n
 castValue (DC.VFun _ _) = Nothing
+
+-- | Returns the bindings corresponding to tests.
+testBindings :: FL.BindingName -> CuMin.Module -> SaLT.Module -> Either String [(FL.BindingName, CuMin.Binding, SaLT.Binding)]
+testBindings prefix cuminMod saltMod = mapM go cuminBindings where
+  cuminBindings = cuminMod ^.. FL.modBinds . traverse . FL.bindingsByName (prefix `List.isPrefixOf`)
+  go cuminBnd = do
+    let name = cuminBnd ^. FL.bindingName
+    case saltMod ^. FL.modBinds . at name of
+      Nothing -> Left $ "SaLT translation does not contain " ++ name
+      Just saltBnd
+        | not $ null $ cuminBnd ^. CuMin.bindingArgs -> Left $ "test " ++ name ++ " must not have arguments"
+        | otherwise -> return (name, cuminBnd, saltBnd)
