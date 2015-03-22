@@ -27,11 +27,12 @@ import           Data.Proxy
 import qualified System.Environment                    as Env
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
 
+-- | Checks for a bottom in a SaLT value, nested sets are not searched.
 containsBottomSalt :: DS.Value n -> Bool
 containsBottomSalt (DS.VBot _)        = True
 containsBottomSalt (DS.VFun _ _)      = False
 containsBottomSalt (DS.VNat _)        = False
-containsBottomSalt (DS.VSet _ _)      = error "cannot happen"
+containsBottomSalt (DS.VSet _ _)      = False
 containsBottomSalt (DS.VCon _ args _) = any containsBottomSalt args
 
 containsBottomCuMin :: DC.Value n -> Bool
@@ -70,6 +71,8 @@ runBenchmark = do
     then do
       putStrLn "Available benchmarks: "
       mapMOf_ (traverse._1) putStrLn bindings
+      putStrLn ""
+      putStrLn "Call with: benchmark-runner <Benchmark1> [Benchmark2 ...] [-- <criterion arguments>]"
     else Env.withArgs (filter (/= "--") args)
       $ defaultMain
       $ map (mkBenchmarks . mkEnv testModCuminPrelude testModSalt)
