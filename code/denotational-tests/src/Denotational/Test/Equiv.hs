@@ -44,7 +44,7 @@ cuminSaltEquiv cmod smod cexp sexp step = do
     Just cvalsD' -> PO.partiallyEqual cvalsD cvalsD' `shouldBe` True
 
 testModCumin :: CuMin.Module
-testModCumin = $(CuMin.moduleFromFileWithPrelude CuMin.preludeModule "files/EquivTests.cumin")
+testModCumin = $(CuMin.moduleFromFileWithPrelude CuMin.preludeModule "files/TestEnv.cumin")
 
 -- | Performs the equivalence tests.
 spec :: Spec
