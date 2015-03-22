@@ -1,3 +1,42 @@
+{-
+Example from Ancestors.cumin
+-}
+
+data Person = Alice | Bob | Eve | Peter | Paul
+
+parent :: Person -> Person
+parent p = case p of
+  Eve  -> choose<:Person:> Alice Bob
+  Paul -> choose<:Person:> Eve Peter
+  x    -> failed<:Person:>
+
+children :: Person -> Person
+children a = let b :: Person free in case a == parent b of
+  { True -> b; False -> failed<:Person:> }
+
+grandparent :: Person -> Person
+grandparent a = let b :: Person free in let c :: Person free in
+  case b == parent a of
+    True -> case c == parent b of
+      True -> c
+      False -> failed<:Person:>
+    False -> failed<:Person:>
+
+{- Built-in natural numbers -}
+
+minus :: Nat -> Nat -> Nat
+minus a b = let k :: Nat free in guard<:Nat:> (a == b + k) k
+
+mult :: Nat -> Nat -> Nat
+mult a b = case a == 0 of
+  True -> 0
+  False -> b + mult (minus a 1) b
+
+fac :: Nat -> Nat
+fac n = case n == 0 of
+  False -> mult n (fac (minus n 1))
+  True  -> 1
+
 {- Peano Numbers -}
 
 data Peano = Z | S Peano
@@ -6,6 +45,17 @@ addPeano :: Peano -> Peano -> Peano
 addPeano a b = case a of
   Z -> b
   S r -> S (addPeano r b)
+
+subPeanoDet :: Peano -> Peano -> Peano
+subPeanoDet a b = case b of
+  Z -> a
+  S b' -> case a of
+    Z -> failed<:Peano:>
+    S a' -> subPeanoDet a' b'
+
+subPeanoFree :: Peano -> Peano -> Peano
+subPeanoFree a b = let d :: Peano free in
+  guard<:Peano:> (addPeano b d == a) d
 
 multPeano :: Peano -> Peano -> Peano
 multPeano m n = case n of
@@ -71,7 +121,6 @@ insertAnywhere x xs = case xs of
   Nil -> [x]<:a:>
   Cons y ys -> choose<:List a:> (Cons<:a:> x xs) (Cons<:a:> y (insertAnywhere<:a:> x ys))
 
-
 isSorted :: forall a.(a -> a -> Ordering) -> [a] -> Bool
 isSorted cmp xs = case xs of
   Nil -> True
@@ -84,10 +133,16 @@ isSorted' cmp pred xs = case xs of
     GT -> False
     o  -> isSorted'<:a:> cmp y ys
 
-permSort :: forall a. (a -> a -> Ordering) -> [a] -> [a]
-permSort cmp xs = let ys = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:> xs in guard<:List a:> (isSorted<:a:> cmp ys) ys
+permuted :: forall a. List a -> List a
+permuted = foldr<:a,List a:> insertAnywhere<:a:> Nil<:a:>
 
-{- Functions on Lists -}
+permSort :: forall a. (a -> a -> Ordering) -> [a] -> [a]
+permSort cmp xs = let ys = permuted<:a:> xs in guard<:List a:> (isSorted<:a:> cmp ys) ys
+
+{- Miscellaneous functions -}
+
+caseFailure :: forall a.List a -> List a
+caseFailure  x = case x of { Nil -> failed<:List a:>; y -> y }
 
 {- repeat only works with iterative deepening search when using unrestricted step index -}
 repeat :: forall a. a -> [a]
@@ -95,5 +150,67 @@ repeat x = choose<:List a:> Nil<:a:> (Cons<:a:> x (repeat<:a:> x))
 
 {- Benchmarks -}
 
+{- All top-level bindings prefixed with "bench" are considered to be benchmarks by the benchmarking program
+   and must not have any arguments and have to be monomorphic.
+-}
+
+benchAddPeano :: Peano
+benchAddPeano = addPeano (S (S (S Z))) (S (S Z))
+
+benchSubPeanoDet :: Peano
+benchSubPeanoDet = subPeanoDet (S (S (S Z))) (S (S Z))
+
+benchSubPeanoFree :: Peano
+benchSubPeanoFree = subPeanoFree (S (S (S Z))) (S (S Z))
+
 benchSort :: List Nat
 benchSort = permSort<:Nat:> cmpNat [1,5,3,2,4]<:Nat:>
+
+
+{- The test application automatically evaluates all functions beginning with "eqTest" and compares
+   the results of the CuMin and SaLT interpreter on them.
+
+   The resulting values must not return function types, since they cannot be compared.
+-}
+
+eqTestCaseFailureCase1 :: List Nat
+eqTestCaseFailureCase1 = caseFailure<:Nat:> []<:Nat:>
+
+eqTestCaseFailureCase2 :: List Nat
+eqTestCaseFailureCase2 = caseFailure<:Nat:> [1,2,3]<:Nat:>
+
+eqTestCaseFailureCase3 :: List Nat
+eqTestCaseFailureCase3 = caseFailure<:Nat:> failed<:List Nat:>
+
+eqTestLetFreeFinite :: Either (Maybe Bool) Bool
+eqTestLetFreeFinite = let x :: Either (Maybe Bool) Bool free in x
+
+eqTestLetFreeInfinite1 :: List Bool
+eqTestLetFreeInfinite1 = let x :: List Bool free in x
+
+eqTestLetFreeInfinite2 :: List Nat
+eqTestLetFreeInfinite2 = let x :: List Nat free in x
+
+eqTestAddition :: Nat
+eqTestAddition = 10 + let n :: Nat free in n
+
+eqTestSubtraction :: Nat
+eqTestSubtraction = minus (choose<:Nat:> 5 7) 5
+
+eqTestLetBinding1 :: Nat
+eqTestLetBinding1 = let x = 1 in let y = choose<:Nat:> 2 3 in x + y
+
+eqTestLetBindingShadowing :: Bool
+eqTestLetBindingShadowing = let x = False in let x = True in x
+
+eqTestAncestorsChildren :: Person
+eqTestAncestorsChildren = children Alice
+
+eqTestAncestorsParent :: Person
+eqTestAncestorsParent = parent Eve
+
+eqTestAncestorsGrandparent :: Person
+eqTestAncestorsGrandparent = grandparent Paul
+
+eqTestRecursion :: Nat
+eqTestRecursion = fac 5
