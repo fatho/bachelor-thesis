@@ -101,7 +101,7 @@ prettyValue showTypeInst val = case val of
       | null args -> PP.text name PP.<> typeAnnot inst
       | otherwise -> case valueToList val of
           Nothing -> PP.text name PP.<> typeAnnot inst
-                        PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
+                        PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map (prettyValue showTypeInst) args)
           Just list -> PP.prettyList list PP.<> typeAnnot inst
     VNat i -> PP.integer i
     VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
@@ -153,8 +153,9 @@ eval (CuMin.EFun fun tyargs) = do
         <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to (fromMaybe $ error $ "function " ++ fun ++ " does not exist")
       -- extract environment use inside of the function value
       curEnv <- ask
+      let tySubst v = views (Core.typeEnv.at v) (maybe (FL.TVar v) snd) curEnv
       -- construct type environment for function evaluation
-      let tyEnv = fmap (mkTyVarSet &&& id) $ M.fromList $ zip tyvars tyargs
+      let tyEnv = fmap (mkTyVarSet &&& FL.foldType FL.TCon tySubst) $ M.fromList $ zip tyvars tyargs
           mkTyVarSet ty i = runReaderT (Core.anything ty) curEnv { Core._stepIdx = i }
       -- build nested lambda expression
       let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
