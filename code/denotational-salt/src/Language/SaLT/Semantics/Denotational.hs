@@ -206,7 +206,8 @@ eval (SaLT.EFun fun tyargs) = do
       (SaLT.Binding _ body (SaLT.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . SaLT.modBinds . at fun . to fromJust
       -- evaluate type environment
       curEnv <- ask
-      let tyEnv = fmap (flip runReaderT curEnv . Core.anything &&& id) $ M.fromList $ zip tyvars tyargs
+      let tyEnv = fmap (mkTyVarSet &&& id) $ M.fromList $ zip tyvars tyargs
+          mkTyVarSet ty i = runReaderT (Core.anything ty) curEnv { Core._stepIdx = i }
       -- evaluate body
       Core.decrementStep $ Core.bindTyVars tyEnv $ eval body
 eval (SaLT.ECon con tys) = do

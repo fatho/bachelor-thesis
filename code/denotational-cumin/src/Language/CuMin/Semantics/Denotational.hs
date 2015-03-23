@@ -154,7 +154,8 @@ eval (CuMin.EFun fun tyargs) = do
       -- extract environment use inside of the function value
       curEnv <- ask
       -- construct type environment for function evaluation
-      let tyEnv = fmap (flip runReaderT curEnv . Core.anything &&& id) $ M.fromList $ zip tyvars tyargs
+      let tyEnv = fmap (mkTyVarSet &&& id) $ M.fromList $ zip tyvars tyargs
+          mkTyVarSet ty i = runReaderT (Core.anything ty) curEnv { Core._stepIdx = i }
       -- build nested lambda expression
       let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
           mkEval vars = runReaderT (eval body) curEnv
