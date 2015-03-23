@@ -122,7 +122,7 @@ prettyValue showTypeInst val = case val of
       | null args -> PP.text name PP.<> typeAnnot inst
       | otherwise -> case valueToList val of
           Nothing -> PP.text name PP.<> typeAnnot inst
-                        PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map PP.pretty args)
+                        PP.<> PP.encloseSep PP.lparen PP.rparen PP.comma (map (prettyValue showTypeInst) args)
           Just list -> PP.prettyList list PP.<> typeAnnot inst
     VNat i -> PP.integer i
     VFun _ uid -> PP.text "<closure:" PP.<> PP.int (hashUnique uid) PP.<> PP.text ">"
@@ -206,7 +206,8 @@ eval (SaLT.EFun fun tyargs) = do
       (SaLT.Binding _ body (SaLT.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . SaLT.modBinds . at fun . to fromJust
       -- evaluate type environment
       curEnv <- ask
-      let tyEnv = fmap (mkTyVarSet &&& id) $ M.fromList $ zip tyvars tyargs
+      let tySubst v = views (Core.typeEnv.at v) (maybe (FL.TVar v) snd) curEnv
+      let tyEnv = fmap (mkTyVarSet &&& FL.foldType FL.TCon tySubst) $ M.fromList $ zip tyvars tyargs
           mkTyVarSet ty i = runReaderT (Core.anything ty) curEnv { Core._stepIdx = i }
       -- evaluate body
       Core.decrementStep $ Core.bindTyVars tyEnv $ eval body
