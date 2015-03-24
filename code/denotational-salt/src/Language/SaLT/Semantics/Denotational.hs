@@ -24,6 +24,7 @@ module Language.SaLT.Semantics.Denotational
 import           Control.Applicative
 import           Control.Arrow                   ((&&&))
 import           Control.Lens                    hiding (each)
+import qualified Control.Monad.Logic             as Logic
 import           Control.Monad.Reader
 import qualified Data.List                       as List
 import qualified Data.Map                        as M
