@@ -3,6 +3,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE LambdaCase                #-}
 module Denotational.Test.Benchmark where
 
 import qualified FunLogic.Core                         as FL
@@ -26,6 +27,8 @@ import qualified Data.List                             as List
 import           Data.Proxy
 import qualified System.Environment                    as Env
 import qualified Text.PrettyPrint.ANSI.Leijen          as PP
+
+import qualified Debug.Trace as Dbg
 
 -- | Checks for a bottom in a SaLT value, nested sets are not searched.
 containsBottomSalt :: DS.Value n -> Bool
@@ -65,18 +68,9 @@ runBenchmark = do
     $ SaLT.evalTC' (SaLT.checkModule testModSalt)
   -- extract name of bindings
   bindings <- either fail return $ Common.testBindings "bench" testModCuminPrelude testModSalt
-  -- split arguments into benchmark names and criterion parameters
-  (bnames, args) <- List.break (== "--") <$> Env.getArgs
-  if null bnames
-    then do
-      putStrLn "Available benchmarks: "
-      mapMOf_ (traverse._1) putStrLn bindings
-      putStrLn ""
-      putStrLn "Call with: benchmark-runner <Benchmark1> [Benchmark2 ...] [-- <criterion arguments>]"
-    else Env.withArgs (filter (/= "--") args)
-      $ defaultMain
-      $ map (mkBenchmarks . mkEnv testModCuminPrelude testModSalt)
-      $ filter (views _1 (`elem` bnames)) bindings
+
+  defaultMain
+      $ map (mkBenchmarks . mkEnv testModCuminPrelude testModSalt) bindings
 
 mkEnv :: CuMin.Module -> SaLT.Module -> (FL.BindingName, CuMin.Binding, SaLT.Binding) -> BenchmarkEnv
 mkEnv cuminMod saltMod (name, cuminBnd, saltBnd) = BenchmarkEnv cuminMod saltMod name cuminBnd saltBnd
@@ -85,26 +79,33 @@ data BenchSearch = SearchDFS | SearchBFS | SearchIter deriving (Eq, Ord, Enum, B
 data BenchLanguage = LangCumin | LangSalt deriving (Eq, Ord, Enum, Bounded, Show)
 data BenchPruning = PruningNone | PruningNonMax | PruningDuplicates deriving (Eq, Ord, Enum, Bounded, Show)
 
+pruningNone :: (Search.MonadSearch m) => m a -> m a
+pruningNone m = Search.peek m >>= \case
+  Nothing -> Logic.mzero
+  Just (v,vs) -> Logic.mplus (return v) vs
+
 -- | Creates a single evaluation benchmark using the supplied configuration.
 evalBenchmark :: BenchSearch -> BenchPruning -> BenchLanguage -> BenchmarkEnv -> Benchmarkable
 evalBenchmark s p l BenchmarkEnv {..} = withLang l where
   withLang LangCumin = (case s of
-        SearchDFS  -> benchmarkCumin dfsProxy (DC.eval cuminExp) (pruningFor p)
-        SearchBFS  -> benchmarkCumin bfsProxy (DC.eval cuminExp) (pruningFor p)
-        SearchIter -> benchmarkCumin dfsProxy (DC.iterDeep $ DC.eval cuminExp) (pruningFor p)
+        SearchDFS  -> benchmarkCumin dfsProxy (DC.eval cuminExp) pruningImpl
+        SearchBFS  -> benchmarkCumin bfsProxy (DC.eval cuminExp) pruningImpl
+        SearchIter -> benchmarkCumin dfsProxy (DC.iterDeep $ DC.eval cuminExp) pruningImpl
     ) DC.StepInfinity _benchCuminMod
   withLang LangSalt = (case s of
-        SearchDFS  -> benchmarkSalt dfsProxy (DS.eval saltExp) (pruningFor p)
-        SearchBFS  -> benchmarkSalt bfsProxy (DS.eval saltExp) (pruningFor p)
-        SearchIter -> benchmarkSalt dfsProxy (DS.iterDeep $ DS.eval saltExp) (pruningFor p)
+        SearchDFS  -> benchmarkSalt dfsProxy (DS.eval saltExp) pruningImpl
+        SearchBFS  -> benchmarkSalt bfsProxy (DS.eval saltExp) pruningImpl
+        SearchIter -> benchmarkSalt dfsProxy (DS.iterDeep $ DS.eval saltExp) pruningImpl
     ) DS.StepInfinity _benchSaltMod
 
   cuminExp = _benchCuminBnd ^. FL.bindingExpr
   saltExp  = _benchSaltBnd ^. FL.bindingExpr
 
-  pruningFor PruningNone       = id
-  pruningFor PruningNonMax     = Pruning.pruneNonMaximal
-  pruningFor PruningDuplicates = Pruning.pruneDuplicates
+  pruningImpl :: (Search.MonadSearch m, Show a, PO.PartialOrd a, Ord a) => m a -> m a
+  pruningImpl = case p of
+      PruningNone       -> pruningNone
+      PruningNonMax     -> Pruning.pruneNonMaximal
+      PruningDuplicates -> Pruning.pruneDuplicates
 
 -- creates a benchmark group for each item in the list named using the @Show@ instance.
 bgroupForEach :: Show a => [a] -> (a -> [Benchmark]) -> [Benchmark]
@@ -133,16 +134,14 @@ benchmarkCumin :: (Search.MonadSearch n, Search.Observable n)
     => Proxy n -> DC.Eval n (DC.Value n) -> DC.PruningF n DC.Value -> Core.StepIndex
     -> CuMin.Module -> Benchmarkable
 benchmarkCumin _ action pruning stepIdx modul =
-  whnf (List.find (not . containsBottomCuMin) . Search.observeAll)
-    $ DC.runEval action modul stepIdx pruning
+  whnf (List.find (not . containsBottomCuMin) . Search.observeAll . DC.runEval action modul stepIdx) pruning
 
 -- | Benchmarks a SaLT evaluation by measuring the time needed to produce the first fully defined result.
 benchmarkSalt :: (Search.MonadSearch n, Search.Observable n)
     => Proxy n -> DS.EvalExp n (DS.Value n) -> DS.PruningF n DS.Value -> Core.StepIndex
     -> SaLT.Module -> Benchmarkable
 benchmarkSalt _ action pruning stepIdx modul =
-      whnf (List.find (not . containsBottomSalt) . Search.observeAll . ensureSet)
-        $ DS.runEval action modul stepIdx pruning
+      whnf (List.find (not . containsBottomSalt) . Search.observeAll . ensureSet . DS.runEval action modul stepIdx) pruning
   where
     ensureSet (DS.VSet vs _) = vs
     ensureSet _ = error "result not a set"

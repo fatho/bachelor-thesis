@@ -128,12 +128,6 @@ type Eval n = ReaderT (EvalEnv n) n
 prune :: (Search.MonadSearch n) => Eval n (Value n) -> Eval n (Value n)
 prune a = view Core.pruningImpl >>= flip mapReaderT a
 
--- * This specializations brought a slight performance gain, as those types are the only ones used by the REPL.
-{-# SPECIALIZE Core.anything :: CuMin.Type -> Eval Logic.Logic (Value Logic.Logic) #-}
-{-# SPECIALIZE Core.anything :: CuMin.Type -> Eval (Search.UnFair Logic.Logic) (Value (Search.UnFair Logic.Logic)) #-}
-{-# SPECIALIZE eval :: CuMin.Exp -> Eval Logic.Logic (Value Logic.Logic) #-}
-{-# SPECIALIZE eval :: CuMin.Exp -> Eval (Search.UnFair Logic.Logic) (Value (Search.UnFair Logic.Logic)) #-}
-
 -- | Evaluates a CuMin expression using the denotational term semantics.
 -- This function assumes that the expression and the module used as environment
 -- in the Eval monad have passed the type checker before feeding them to the evaluator.
