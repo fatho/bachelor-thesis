@@ -33,10 +33,11 @@ fi
 packages=("dependencies/ba-funlogic-common/funlogic-core"
       "dependencies/ba-funlogic-common/language-cumin"
       "dependencies/ba-funlogic-common/language-salt"
-      "code/haskeline-repl"
+      "dependencies/cumin2salt"
       "code/denotational-funlogic"
       "code/denotational-cumin"
-      "code/denotational-salt")
+      "code/denotational-salt"
+      "code/denotational-tests")
 
 printf "$GREEN"
 print_status "Initializing packages..."
