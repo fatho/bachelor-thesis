@@ -147,10 +147,9 @@ eval (CuMin.EFun fun tyargs) = do
         <- view $ Core.moduleEnv . CuMin.modBinds . at fun . to (fromMaybe $ error $ "function " ++ fun ++ " does not exist")
       -- extract environment use inside of the function value
       curEnv <- ask
-      let tySubst v = views (Core.typeEnv.at v) (maybe (FL.TVar v) snd) curEnv
+      let tySubst v = views (Core.typeEnv.at v) (fromMaybe (FL.TVar v)) curEnv
       -- construct type environment for function evaluation
-      let tyEnv = fmap (mkTyVarSet &&& FL.foldType FL.TCon tySubst) $ M.fromList $ zip tyvars tyargs
-          mkTyVarSet ty i = runReaderT (Core.anything ty) curEnv { Core._stepIdx = i }
+      let tyEnv = fmap (FL.foldType FL.TCon tySubst) $ M.fromList $ zip tyvars tyargs
       -- build nested lambda expression
       let mkLam name rst vars = return $! mkFun $ \val -> rst (M.insert name val vars)
           mkEval vars = runReaderT (eval body) curEnv
@@ -162,7 +161,7 @@ eval (CuMin.EFun fun tyargs) = do
 eval (CuMin.ECon con tyargs) = do
   (CuMin.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   tyEnv <- view Core.typeEnv
-  let tySubst v = views (at v) (maybe (FL.TVar v) snd) tyEnv
+  let tySubst v = views (at v) (fromMaybe $ FL.TVar v) tyEnv
   let tyInst = map (FL.foldType FL.TCon tySubst) tyargs
   let mkLam _ rst dxs = mkFun $ \x -> return $ rst (dxs . (x:))
       mkCon _     dxs = VCon con (dxs []) tyInst

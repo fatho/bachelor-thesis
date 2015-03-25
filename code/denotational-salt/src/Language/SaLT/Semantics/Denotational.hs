@@ -207,15 +207,14 @@ eval (SaLT.EFun fun tyargs) = do
       (SaLT.Binding _ body (SaLT.TyDecl tyvars _ _) _) <- view $ Core.moduleEnv . SaLT.modBinds . at fun . to fromJust
       -- evaluate type environment
       curEnv <- ask
-      let tySubst v = views (Core.typeEnv.at v) (maybe (FL.TVar v) snd) curEnv
-      let tyEnv = fmap (mkTyVarSet &&& FL.foldType FL.TCon tySubst) $ M.fromList $ zip tyvars tyargs
-          mkTyVarSet ty i = runReaderT (Core.anything ty) curEnv { Core._stepIdx = i }
+      let tySubst v = views (Core.typeEnv.at v) (fromMaybe $ FL.TVar v) curEnv
+      let tyEnv = fmap (FL.foldType FL.TCon tySubst) $ M.fromList $ zip tyvars tyargs
       -- evaluate body
       Core.decrementStep $ Core.bindTyVars tyEnv $ eval body
 eval (SaLT.ECon con tys) = do
   (SaLT.TyDecl _ _ rawType) <- fromMaybe (error "unknown type constructor") <$> view (Core.constrEnv . at con)
   tyEnv <- view Core.typeEnv
-  let tySubst v = views (at v) (maybe (FL.TVar v) snd) tyEnv
+  let tySubst v = views (at v) (fromMaybe $ FL.TVar v) tyEnv
   let tyInst = map (FL.foldType FL.TCon tySubst) tys
   let f _ rst dxs = mkFun $ \x -> rst (dxs . (x:))
       g _     dxs = VCon con (dxs []) tyInst

@@ -85,8 +85,8 @@ data EvalEnv bnd val nd
   = EvalEnv
   { _termEnv   :: M.Map FL.VarName (val nd)
   -- ^ the mapping from variable names to values \sigma
-  , _typeEnv   :: M.Map FL.TVName (StepIndex -> nd (val nd), FL.Type)
-  -- ^ the mapping from type variables to sets of value \theta
+  , _typeEnv   :: M.Map FL.TVName FL.Type
+  -- ^ the mapping from type variables to closed types \theta
   , _moduleEnv :: FL.CoreModule bnd
   -- ^ the module providing a context for evaluating the expression
   , _constrEnv :: M.Map FL.DataConName FL.TyDecl
@@ -137,10 +137,10 @@ anything = anything' HS.empty
 -- allow termination.
 anything' :: (Value val, Search.MonadSearch n) => HS.HashSet FL.TyConName -> FL.Type -> Eval bnd val n (val n)
 {-# INLINABLE anything' #-}
-anything' _  (FL.TVar tv)         = do
-  si <- view stepIdx
-  gen <- views (typeEnv.at tv) (maybe (error "free type variable") fst)
-  lift $ gen si
+anything' vs  (FL.TVar tv)         = do
+  closedTy <- views (typeEnv.at tv) (fromMaybe (error "free type variable"))
+  -- since the environment only maps to closed types, this recursion will eventually terminate
+  anything' vs closedTy
 anything' _  (FL.TFun _ _)        = error "free variables cannot have a function type"
 anything' _  (FL.TNat)            = fmap naturalValue anyNatural
 anything' vs (FL.TCon tycon args) = view stepIdx >>= \case
@@ -195,7 +195,7 @@ bindVars :: (MonadReader (EvalEnv bnd val n) m, Monad n) => M.Map FL.VarName (va
 bindVars vars = local (termEnv %~ M.union vars)
 
 -- | Evaluate the body with new type variable bindings in the type environment
-bindTyVars :: (MonadReader (EvalEnv bnd val n) m, Monad n) => M.Map FL.TVName (StepIndex -> n (val n), FL.Type) -> m a -> m a
+bindTyVars :: (MonadReader (EvalEnv bnd val n) m, Monad n) => M.Map FL.TVName FL.Type -> m a -> m a
 bindTyVars tyvars = local (typeEnv %~ M.union tyvars)
 
 -- | Monadic list equality test. Uses by CuMin and SaLT specific equality tests.
